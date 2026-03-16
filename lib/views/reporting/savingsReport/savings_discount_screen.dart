@@ -2,7 +2,9 @@ import 'package:filter_corporate_customer/widgets/custom_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../models/department_model.dart';
 import '../../../models/savings_discount_model.dart';
+import '../../../models/vehicle_model.dart';
 import '../../../utils/app_colors.dart';
 import '../../../utils/app_text_styles.dart';
 import '../../../widgets/custom_button.dart';
@@ -85,7 +87,7 @@ class _NarrowLayout extends StatelessWidget {
         _sliver(padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: _DepartmentSection(vm: vm)),
         _sliver(padding: const EdgeInsets.fromLTRB(16, 14, 16, 60),
-            child: _ExportButton()),
+            child: const _ExportButton()),
       ],
     );
   }
@@ -117,7 +119,7 @@ class _WideLayout extends StatelessWidget {
           ),
         ),
         _sliver(padding: const EdgeInsets.fromLTRB(24, 14, 24, 32),
-            child: _ExportButton()),
+            child: const _ExportButton()),
       ],
     );
   }
@@ -150,7 +152,7 @@ class _FiltersBarState extends State<_FiltersBar> {
         : widget.vm.filters.toDate;
     final picked  = await showDatePicker(
       context: context,
-      initialDate: current ?? now,
+      initialDate: current != null && current.isBefore(now) ? current : now,
       firstDate: DateTime(2023),
       lastDate: now,
       builder: (ctx, child) => Theme(
@@ -188,7 +190,7 @@ class _FiltersBarState extends State<_FiltersBar> {
       ),
       child: Column(
         children: [
-          // Row 1 — date range
+          // Row 1 — date range + clear
           Row(
             children: [
               Expanded(
@@ -240,7 +242,7 @@ class _FiltersBarState extends State<_FiltersBar> {
             children: [
               Expanded(
                 child: _VehicleDropdown(
-                  vehicles: vm.vehicleOptions,
+                  vehicles: vm.dropdownVehicles,
                   value: f.vehicleId,
                   onChanged: (id) => vm.updateFilters(id == null
                       ? f.copyWith(clearVehicle: true)
@@ -250,11 +252,11 @@ class _FiltersBarState extends State<_FiltersBar> {
               const SizedBox(width: 10),
               Expanded(
                 child: _DepartmentDropdown(
-                  departments: vm.departmentOptions,
-                  value: f.department,
-                  onChanged: (d) => vm.updateFilters(d == null
+                  departments: vm.dropdownDepartments,
+                  value: f.departmentId,
+                  onChanged: (id) => vm.updateFilters(id == null
                       ? f.copyWith(clearDepartment: true)
-                      : f.copyWith(department: d)),
+                      : f.copyWith(departmentId: id)),
                 ),
               ),
             ],
@@ -280,7 +282,7 @@ class _SummaryCards extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel(icon: Icons.savings_outlined, title: 'Summary'),
+        const _SectionLabel(icon: Icons.savings_outlined, title: 'Summary'),
         const SizedBox(height: 10),
         isWide
         // Wide: 3 in a row
@@ -479,25 +481,8 @@ class _SavingsHighlightCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Savings by Vehicle — horizontal-scroll table
+// Savings by Vehicle — bar chart with table-loading state
 // ─────────────────────────────────────────────────────────────────────────────
-
-const double _vColVehicle    = 160.0;
-const double _vColPlate      = 100.0;
-const double _vColMarket     = 130.0;
-const double _vColCorporate  = 130.0;
-const double _vColSaved      = 120.0;
-const double _vColPct        =  90.0;
-const double _vRowHPad       =  16.0;
-
-double get _vTotalWidth =>
-    _vRowHPad * 2 +
-        _vColVehicle +
-        _vColPlate +
-        _vColMarket +
-        _vColCorporate +
-        _vColSaved +
-        _vColPct;
 
 class _VehicleSection extends StatelessWidget {
   final SavingsDiscountViewModel vm;
@@ -508,18 +493,19 @@ class _VehicleSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel(
+        const _SectionLabel(
             icon: Icons.directions_car_outlined,
             title: 'Savings by Vehicle'),
         const SizedBox(height: 10),
-
-        // ── Horizontal bar chart ────────────────────────────────────────
-        if (vm.vehicleRows.isNotEmpty) ...[
-          _VehicleBarChart(rows: vm.vehicleRows),
-          const SizedBox(height: 14),
-        ],
-
-
+        if (vm.isTableLoading)
+          _loadingCard()
+        else if (vm.vehicleRows.isEmpty)
+          _emptyState('No vehicle savings data')
+        else
+          _VehicleBarChart(
+            rows: vm.vehicleRows,
+            scale: vm.summary?.totalMarketCost ?? 0,
+          ),
       ],
     );
   }
@@ -531,12 +517,14 @@ class _VehicleSection extends StatelessWidget {
 
 class _VehicleBarChart extends StatelessWidget {
   final List<VehicleSavingsRow> rows;
-  const _VehicleBarChart({required this.rows});
+  final double scale; // use totalMarketCost so bars are proportional to real spend
+  const _VehicleBarChart({required this.rows, required this.scale});
 
   @override
   Widget build(BuildContext context) {
-    // Find max saved value to calculate bar widths proportionally
-    final maxSaved = rows.map((r) => r.saved).reduce((a, b) => a > b ? a : b);
+    final maxSaved = scale > 0
+        ? scale
+        : rows.map((r) => r.savings).reduce((a, b) => a > b ? a : b);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -553,15 +541,13 @@ class _VehicleBarChart extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Chart rows
           ...rows.map((row) {
-            final fraction = maxSaved > 0 ? row.saved / maxSaved : 0.0;
+            final fraction = maxSaved > 0 ? row.savings / maxSaved : 0.0;
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Label row
                   Row(
                     children: [
                       Expanded(
@@ -569,13 +555,12 @@ class _VehicleBarChart extends StatelessWidget {
                         child: Text(
                           '${row.vehicleName} ${row.plateNumber}',
                           style: AppTextStyles.bodySmall.copyWith(
-                              color: Colors.grey.shade800,
-                              fontSize: 11),
+                              color: Colors.grey.shade800, fontSize: 11),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       Text(
-                        'SAR ${_fmt(row.saved)} saved',
+                        'SAR ${_fmt(row.savings)} saved',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: Colors.green.shade700,
                           fontWeight: FontWeight.w700,
@@ -585,13 +570,10 @@ class _VehicleBarChart extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 5),
-                  // Bar
                   LayoutBuilder(builder: (ctx, constraints) {
-                    final barWidth =
-                        constraints.maxWidth * fraction;
+                    final barWidth = constraints.maxWidth * fraction;
                     return Stack(
                       children: [
-                        // Background track
                         Container(
                           height: 10,
                           width: double.infinity,
@@ -600,7 +582,6 @@ class _VehicleBarChart extends StatelessWidget {
                             borderRadius: BorderRadius.circular(6),
                           ),
                         ),
-                        // Filled bar
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 600),
                           curve: Curves.easeOutCubic,
@@ -617,9 +598,7 @@ class _VehicleBarChart extends StatelessWidget {
                 ],
               ),
             );
-          }).toList(),
-
-          // X-axis scale hint
+          }),
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Row(
@@ -643,20 +622,14 @@ class _VehicleBarChart extends StatelessWidget {
   }
 }
 
-
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Savings by Department — horizontal-scroll table
+// Savings by Department — table with table-loading state
 // ─────────────────────────────────────────────────────────────────────────────
 
-const double _dColDept      = 200.0;
-const double _dColSaved     = 150.0;
-const double _dRowHPad      =  16.0;
-
-double get _dTotalWidth =>
-    _dRowHPad * 2 +
-        _dColDept +
-        _dColSaved;
+const double _dColDept  = 200.0;
+const double _dColSaved = 150.0;
+const double _dRowHPad  =  16.0;
+double get _dTotalWidth => _dRowHPad * 2 + _dColDept + _dColSaved;
 
 class _DepartmentSection extends StatelessWidget {
   final SavingsDiscountViewModel vm;
@@ -667,46 +640,50 @@ class _DepartmentSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SectionLabel(
+        const _SectionLabel(
             icon: Icons.category_outlined,
             title: 'Savings by Department'),
         const SizedBox(height: 10),
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.surfaceLight,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2)),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                width: _dTotalWidth,
-                child: Column(
-                  children: [
-                    _DeptTableHeader(),
-                    if (vm.departmentRows.isEmpty)
-                      _emptyState('No department data'),
-                    ...List.generate(
-                      vm.departmentRows.length,
-                          (i) => _DeptTableRow(
-                        row:    vm.departmentRows[i],
-                        isEven: i % 2 == 0,
-                        isLast: i == vm.departmentRows.length - 1,
-                      ),
-                    ),
-                  ],
+        if (vm.isTableLoading)
+          _loadingCard()
+        else
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2)),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: _dTotalWidth,
+                  child: Column(
+                    children: [
+                      const _DeptTableHeader(),
+                      if (vm.departmentRows.isEmpty)
+                        _emptyState('No department data')
+                      else
+                        ...List.generate(
+                          vm.departmentRows.length,
+                              (i) => _DeptTableRow(
+                            row:    vm.departmentRows[i],
+                            isEven: i % 2 == 0,
+                            isLast: i == vm.departmentRows.length - 1,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -719,16 +696,12 @@ class _DeptTableHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: _dTotalWidth,
-      padding: const EdgeInsets.symmetric(
-          horizontal: _dRowHPad, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: _dRowHPad, vertical: 14),
       color: AppColors.secondaryLight,
-      child: Row(
-        children: const [
-          _TH(label: 'Department',  width: _dColDept),
-        //  _TH(label: 'Market Cost', width: _dColMarket),
-       //   _TH(label: 'Corp. Cost',  width: _dColCorp),
-          _TH(label: 'Saved',       width: _dColSaved),
-     //     _TH(label: '% Saved',     width: _dColPct),
+      child: const Row(
+        children: [
+          _TH(label: 'Department', width: _dColDept),
+          _TH(label: 'Saved',      width: _dColSaved),
         ],
       ),
     );
@@ -749,8 +722,7 @@ class _DeptTableRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: _dTotalWidth,
-      padding: const EdgeInsets.symmetric(
-          horizontal: _dRowHPad, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: _dRowHPad, vertical: 16),
       decoration: BoxDecoration(
         color: isEven ? AppColors.surfaceLight : const Color(0xFFF7F8FA),
         border: isLast
@@ -785,7 +757,7 @@ class _DeptTableRow extends StatelessWidget {
           ),
           SizedBox(
             width: _dColSaved,
-            child: Text('SAR ${_fmt(row.saved)}',
+            child: Text('SAR ${_fmt(row.savings)}',
                 style: AppTextStyles.bodySmall.copyWith(
                     color: Colors.green.shade700,
                     fontWeight: FontWeight.w800)),
@@ -841,11 +813,19 @@ class _ExportButton extends StatelessWidget {
             : () async {
           await vm.exportReport();
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Report exported successfully'),
-            backgroundColor: AppColors.secondaryLight,
-            behavior: SnackBarBehavior.floating,
-          ));
+          if (vm.exportError != null) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(vm.exportError!),
+              backgroundColor: Colors.red.shade600,
+              behavior: SnackBarBehavior.floating,
+            ));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('Report exported successfully'),
+              backgroundColor: AppColors.secondaryLight,
+              behavior: SnackBarBehavior.floating,
+            ));
+          }
         },
       ),
     );
@@ -884,7 +864,7 @@ class _SectionLabel extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Filter chip (date picker trigger)
+// Filter chip
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _FilterChip extends StatelessWidget {
@@ -943,11 +923,11 @@ class _FilterChip extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Vehicle dropdown  (text color: black)
+// Vehicle dropdown  — uses VehicleModel from AppCache/VehicleRepository
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _VehicleDropdown extends StatelessWidget {
-  final List<VehicleSavingsRow> vehicles;
+  final List<VehicleModel> vehicles;
   final String? value;
   final ValueChanged<String?> onChanged;
   const _VehicleDropdown({
@@ -976,10 +956,12 @@ class _VehicleDropdown extends StatelessWidget {
           ),
           ...vehicles.map((v) => DropdownMenuItem(
             value: v.id,
-            child: Text('${v.vehicleName} (${v.plateNumber})',
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: Colors.black, fontSize: 12),
-                overflow: TextOverflow.ellipsis),
+            child: Text(
+              '${v.make} ${v.model} (${v.plateNumber})',
+              style: AppTextStyles.bodySmall
+                  .copyWith(color: Colors.black, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
           )),
         ],
         onChanged: onChanged,
@@ -989,11 +971,11 @@ class _VehicleDropdown extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Department dropdown  (text color: black)
+// Department dropdown — uses DepartmentModel from LookupRepository
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _DepartmentDropdown extends StatelessWidget {
-  final List<String> departments;
+  final List<DepartmentModel> departments;
   final String? value;
   final ValueChanged<String?> onChanged;
   const _DepartmentDropdown({
@@ -1021,10 +1003,11 @@ class _DepartmentDropdown extends StatelessWidget {
                     .copyWith(color: Colors.black, fontSize: 12)),
           ),
           ...departments.map((d) => DropdownMenuItem(
-            value: d,
-            child: Text(d,
+            value: d.id,
+            child: Text(d.name,
                 style: AppTextStyles.bodySmall
-                    .copyWith(color: Colors.black, fontSize: 12)),
+                    .copyWith(color: Colors.black, fontSize: 12),
+                overflow: TextOverflow.ellipsis),
           )),
         ],
         onChanged: onChanged,
@@ -1038,8 +1021,7 @@ InputDecoration _dropdownDecoration(String hint) => InputDecoration(
   hintStyle: AppTextStyles.bodySmall.copyWith(
       color: Colors.grey.shade400, fontSize: 12),
   isDense: true,
-  contentPadding:
-  const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
   enabledBorder: OutlineInputBorder(
     borderRadius: BorderRadius.circular(10),
@@ -1047,14 +1029,24 @@ InputDecoration _dropdownDecoration(String hint) => InputDecoration(
   ),
   focusedBorder: OutlineInputBorder(
     borderRadius: BorderRadius.circular(10),
-    borderSide:
-    const BorderSide(color: AppColors.primaryLight, width: 1.5),
+    borderSide: const BorderSide(color: AppColors.primaryLight, width: 1.5),
   ),
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Empty state
+// Shared helpers
 // ─────────────────────────────────────────────────────────────────────────────
+
+Widget _loadingCard() => Container(
+  padding: const EdgeInsets.symmetric(vertical: 48),
+  decoration: BoxDecoration(
+    color: AppColors.surfaceLight,
+    borderRadius: BorderRadius.circular(16),
+  ),
+  child: const Center(
+    child: CircularProgressIndicator(color: AppColors.primaryLight),
+  ),
+);
 
 Widget _emptyState(String msg) => Padding(
   padding: const EdgeInsets.symmetric(vertical: 36),
@@ -1068,10 +1060,6 @@ Widget _emptyState(String msg) => Padding(
     ],
   ),
 );
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 String _shortDate(DateTime d) {
   const m = [

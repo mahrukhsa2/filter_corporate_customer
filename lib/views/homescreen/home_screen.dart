@@ -4,11 +4,32 @@ import 'package:provider/provider.dart';
 import '../../models/home_model.dart';
 import '../../utils/app_colors.dart';
 import '../../utils/app_text_styles.dart';
+import '../../widgets/custom_button.dart';
 import '../../widgets/menu_card.dart';
 import 'home_view_model.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+
+  @override
+  void initState() {
+    super.initState();
+
+    // ✅ Set status bar color for Android 15+
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: AppColors.primaryLight,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -16,53 +37,71 @@ class HomeScreen extends StatelessWidget {
       create: (_) => HomeViewModel(),
       child: Consumer<HomeViewModel>(
         builder: (context, vm, _) {
-          return AnnotatedRegion<SystemUiOverlayStyle>(
-              value: const SystemUiOverlayStyle(
-              statusBarColor: Colors.transparent,
-              statusBarIconBrightness: Brightness.dark, // Android icons
-              statusBarBrightness: Brightness.light,    // iOS icons
-          ),
-          child: Scaffold(
-          backgroundColor: AppColors.backgroundLight,
-            body: vm.isLoading
-                ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primaryLight),
-            )
-                : RefreshIndicator(
-                      color: AppColors.primaryLight,
-                      onRefresh: vm.refresh,
-                      child: CustomScrollView(
-                        slivers: [
-                          // ── H3des4gbg bhfgb  bcceader ────────────────────────────────────────
-                          SliverToBoxAdapter(
-                            child: _HomeHeader(vm: vm),
-                          ),
-
-                          SliverPadding(
-                            padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                            sliver: SliverList(
-                              delegate: SliverChildListDelegate([
-                                // ── KPI Cards row ─────────────────────────
-                                _KpiRow(kpi: vm.kpi!, vm: vm),
-                                const SizedBox(height: 24),
-
-                                // ── Promotional Banners ───────────────────
-                                _SectionTitle(title: 'Promotions'),
-                                const SizedBox(height: 12),
-                                _PromoBannerCarousel(banners: vm.banners),
-                                const SizedBox(height: 24),
-
-                                // ── Quick Actions ─────────────────────────
-                                _SectionTitle(title: 'Quick Actions'),
-                                const SizedBox(height: 12),
-                                _QuickActionsGrid(),
-                                const SizedBox(height: 24),
-                              ]),
-                            ),
-                          ),
-                        ],
-                      ),
+          return Scaffold(
+            backgroundColor: AppColors.backgroundLight,
+            appBar: AppBar(
+              toolbarHeight: 0, // <-- no visible appbar, only status bar area
+              elevation: 0,
+              backgroundColor: AppColors.primaryLight,
+              systemOverlayStyle: const SystemUiOverlayStyle(
+                statusBarColor: AppColors.primaryLight,
+                statusBarIconBrightness: Brightness.light,
+                statusBarBrightness: Brightness.dark, // iOS
+              ),
+            ),
+            body: SafeArea(
+              child: RefreshIndicator(
+                color: AppColors.primaryLight,
+                onRefresh: () => vm.refresh(context: context),
+                child: CustomScrollView(
+                  slivers: [
+                    // ── Header always visible (company name from session) ──
+                    SliverToBoxAdapter(
+                      child: _HomeHeader(vm: vm),
                     ),
+
+                    // ── Loading ────────────────────────────────────────────
+                    if (vm.isLoading)
+                      const SliverFillRemaining(
+                        child: Center(
+                          child: CircularProgressIndicator(
+                              color: AppColors.primaryLight),
+                        ),
+                      )
+
+                    // ── Error ──────────────────────────────────────────────
+                    else if (vm.hasError)
+                      SliverFillRemaining(
+                        child: _ErrorState(vm: vm),
+                      )
+
+                    // ── Loaded ─────────────────────────────────────────────
+                    else
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                        sliver: SliverList(
+                          delegate: SliverChildListDelegate([
+                            // ── KPI Cards row ─────────────────────────
+                            _KpiRow(kpi: vm.kpi!, vm: vm),
+                            const SizedBox(height: 24),
+
+                            // ── Promotional Banners ───────────────────
+                            _SectionTitle(title: 'Promotions'),
+                            const SizedBox(height: 12),
+                            _PromoBannerCarousel(banners: vm.banners),
+                            const SizedBox(height: 24),
+
+                            // ── Quick Actions ─────────────────────────
+                            _SectionTitle(title: 'Quick Actions'),
+                            const SizedBox(height: 12),
+                            _QuickActionsGrid(),
+                            const SizedBox(height: 24),
+                          ]),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           );
         },
@@ -70,6 +109,61 @@ class HomeScreen extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Error State
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ErrorState extends StatelessWidget {
+  final HomeViewModel vm;
+  const _ErrorState({required this.vm});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.wifi_off_rounded,
+                  size: 60, color: Colors.red.shade300),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Could not load dashboard',
+              style: AppTextStyles.h3.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.onBackgroundLight,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              vm.errorMessage,
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 28),
+            CustomButton(
+              text: 'Retry',
+              onPressed: () => vm.refresh(context: context),
+              backgroundColor: AppColors.primaryLight,
+              textColor: AppColors.onPrimaryLight,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Header
@@ -82,99 +176,87 @@ class _HomeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       decoration: const BoxDecoration(
         color: AppColors.primaryLight,
-        borderRadius: BorderRadius.vertical(
-          bottom: Radius.circular(28),
-        ),
+        borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
       ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-          child: Row(
-            children: [
-              // ── Company Name ─────────────────────────────
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Welcome back,',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onPrimaryLight.withOpacity(0.7),
-                      ),
+      child: Row(
+        children: [
+          // Company logo placeholder + name
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome back,',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.onPrimaryLight.withOpacity(0.7),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                GestureDetector(
+                  onTap: () => vm.goToProfile(context), // ✅ /profile
+                  child: Text(
+                    vm.companyName,
+                    style: AppTextStyles.h3.copyWith(
+                      color: AppColors.onPrimaryLight,
+                      fontWeight: FontWeight.w800,
                     ),
-                    const SizedBox(height: 2),
-                    GestureDetector(
-                      onTap: () => vm.goToProfile(context),
-                      child: Text(
-                        vm.companyName,
-                        style: AppTextStyles.h3.copyWith(
-                          color: AppColors.onPrimaryLight,
-                          fontWeight: FontWeight.w800,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // ── Wallet Chip ─────────────────────────────
-              GestureDetector(
-                onTap: () => vm.topUpWallet(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.account_balance_wallet_outlined,
-                        size: 18,
-                        color: AppColors.onPrimaryLight,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'SAR ${_fmt(vm.kpi?.walletBalance ?? 0)}',
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.onPrimaryLight,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
-
-              const SizedBox(width: 10),
-
-              // ── Logout ─────────────────────────────
-              GestureDetector(
-                onTap: () => vm.logout(context),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.12),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.logout_rounded,
-                    size: 20,
-                    color: AppColors.onPrimaryLight,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+
+          // Wallet balance chip
+          GestureDetector(
+            onTap: () => vm.topUpWallet(context),
+            child: Container(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.account_balance_wallet_outlined,
+                      size: 18, color: AppColors.onPrimaryLight),
+                  const SizedBox(width: 6),
+                  Text(
+                    'SAR ${_fmt(vm.kpi?.walletBalance ?? 0)}',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.onPrimaryLight,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+
+          // Logout button
+          GestureDetector(
+            onTap: () => vm.logout(context),
+            child: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.logout_rounded,
+                  size: 20, color: AppColors.onPrimaryLight),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
+
 // ─────────────────────────────────────────────────────────────────────────────
 // KPI Cards (4 in a row – horizontally scrollable on small screens)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -195,7 +277,6 @@ class _KpiRow extends StatelessWidget {
         iconColor: const Color(0xFF1565C0),
         iconBg: const Color(0xFFE3F2FD),
         onTap: () => vm.myBookings(context),
-
       ),
       _KpiCardData(
         title: 'This Month',
@@ -336,6 +417,53 @@ class _KpiCard extends StatelessWidget {
 // Promotional Banners – horizontal scroll carousel
 // ─────────────────────────────────────────────────────────────────────────────
 
+
+// ── Color banner content (text + icon) ───────────────────────────────────────
+class _ColorBannerContent extends StatelessWidget {
+  final PromoBanner banner;
+  final bool isDark;
+  const _ColorBannerContent({required this.banner, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                banner.title,
+                style: AppTextStyles.h3.copyWith(
+                  color: isDark ? Colors.white : AppColors.onPrimaryLight,
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                banner.subtitle,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: isDark
+                      ? Colors.white70
+                      : AppColors.onPrimaryLight.withOpacity(0.7),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Icon(
+          Icons.local_offer_outlined,
+          size: 48,
+          color: isDark
+              ? Colors.white.withOpacity(0.25)
+              : Colors.black.withOpacity(0.15),
+        ),
+      ],
+    );
+  }
+}
+
 class _PromoBannerCarousel extends StatefulWidget {
   final List<PromoBanner> banners;
   const _PromoBannerCarousel({required this.banners});
@@ -367,6 +495,95 @@ class _PromoBannerCarouselState extends State<_PromoBannerCarousel> {
             itemBuilder: (context, i) {
               final banner = widget.banners[i];
               final isDark = banner.color.computeLuminance() < 0.4;
+
+              // ── Image banner — network image + gradient title overlay ──
+              if (banner.hasImage) {
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    color: banner.color,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Background image
+                        Image.network(
+                          banner.imageUrl!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          errorBuilder: (_, __, ___) => _ColorBannerContent(
+                              banner: banner, isDark: isDark),
+                        ),
+                        // Dark gradient from bottom so text is always readable
+                        DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.transparent,
+                                Colors.black.withOpacity(0.55),
+                              ],
+                              stops: const [0.35, 1.0],
+                            ),
+                          ),
+                        ),
+                        // Title + description pinned to bottom-left
+                        Positioned(
+                          left: 16,
+                          right: 16,
+                          bottom: 14,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                banner.title,
+                                style: AppTextStyles.bodyMedium.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
+                                  shadows: [
+                                    Shadow(
+                                      blurRadius: 4,
+                                      color: Colors.black.withOpacity(0.4),
+                                    ),
+                                  ],
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (banner.subtitle.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  banner.subtitle,
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: Colors.white.withOpacity(0.88),
+                                    fontSize: 11,
+                                    shadows: [
+                                      Shadow(
+                                        blurRadius: 4,
+                                        color: Colors.black.withOpacity(0.4),
+                                      ),
+                                    ],
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              // ── Color banner (local / fallback) ───────────────────────
               return Container(
                 margin: const EdgeInsets.symmetric(horizontal: 4),
                 padding: const EdgeInsets.symmetric(
@@ -375,64 +592,33 @@ class _PromoBannerCarouselState extends State<_PromoBannerCarousel> {
                   color: banner.color,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            banner.title,
-                            style: AppTextStyles.h3.copyWith(
-                              color: isDark ? Colors.white : AppColors.onPrimaryLight,
-                              fontSize: 16,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            banner.subtitle,
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: isDark
-                                  ? Colors.white70
-                                  : AppColors.onPrimaryLight.withOpacity(0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      Icons.local_offer_outlined,
-                      size: 48,
-                      color: isDark
-                          ? Colors.white.withOpacity(0.25)
-                          : Colors.black.withOpacity(0.15),
-                    ),
-                  ],
-                ),
+                child: _ColorBannerContent(banner: banner, isDark: isDark),
               );
             },
           ),
         ),
 
-        // Page indicator dots
+        // Page indicator dots — scrollable to handle any number of banners
         const SizedBox(height: 8),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(widget.banners.length, (i) {
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: _currentPage == i ? 18 : 6,
-              height: 6,
-              decoration: BoxDecoration(
-                color: _currentPage == i
-                    ? AppColors.primaryLight
-                    : Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(3),
-              ),
-            );
-          }),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(widget.banners.length, (i) {
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: _currentPage == i ? 18 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: _currentPage == i
+                      ? AppColors.primaryLight
+                      : Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              );
+            }),
+          ),
         ),
       ],
     );
@@ -448,32 +634,31 @@ class _QuickActionsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     final actions = [
       _ActionItem(
         title: 'New Booking',
-        icon: Icons.add_circle_rounded,
+        icon: Icons.add_circle_outline_rounded,
         route: '/new-booking',
         iconColor: const Color(0xFF1565C0),
         iconBg: const Color(0xFFE3F2FD),
       ),
       _ActionItem(
         title: 'Price Quotation',
-        icon: Icons.request_quote,
+        icon: Icons.request_quote_outlined,
         route: '/price-quotation',
         iconColor: const Color(0xFF6A1B9A),
         iconBg: const Color(0xFFF3E5F5),
       ),
       _ActionItem(
         title: 'My Vehicles',
-        icon: Icons.directions_car_filled,
+        icon: Icons.directions_car_outlined,
         route: '/my-vehicles',
         iconColor: const Color(0xFF2E7D32),
         iconBg: const Color(0xFFE8F5E9),
       ),
       _ActionItem(
         title: 'Monthly Billing',
-        icon: Icons.receipt_long,
+        icon: Icons.receipt_long_outlined,
         route: '/monthly-billing',
         iconColor: const Color(0xFFE65100),
         iconBg: const Color(0xFFFFF3E0),
@@ -482,8 +667,8 @@ class _QuickActionsGrid extends StatelessWidget {
         title: 'Reports',
         icon: Icons.receipt,
         route: '/reports-landing',
-        iconColor: const Color(0xFFE65100),
-        iconBg: const Color(0xFFFFF3E0),
+        iconColor: const Color(0xFF1565C0),
+        iconBg: const Color(0xFFE3F2FD),
       ),
     ];
 
@@ -497,13 +682,14 @@ class _QuickActionsGrid extends StatelessWidget {
       children: actions
           .map(
             (a) => MenuCard(
-              title: a.title,
-              icon: a.icon,
-              iconColor: AppColors.primaryLight,
-              iconBgColor: AppColors.secondaryDark,
-              onTap: () => Navigator.pushNamed(context, a.route),
-            ),
-          )
+          title: a.title,
+          icon: a.icon,
+          iconBgColor: AppColors.secondaryDark,
+          iconColor: AppColors.primaryLight,
+
+          onTap: () => Navigator.pushNamed(context, a.route),
+        ),
+      )
           .toList(),
     );
   }

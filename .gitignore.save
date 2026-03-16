@@ -1,5 +1,27 @@
-\
+cat > .gitignore <<'EOF'
 # Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+
+# Android
+android/.gradle/
+android/local.properties
+
+# iOS
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+
+# IDE
+.idea/
+*.iml
+
+# Misc
+.DS_Store
+EOF
+º# Flutter/Dart
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
@@ -21,4 +43,4 @@ ios/Flutter/Flutter.podspec
 
 # Misc
 .DS_Store
-
+0

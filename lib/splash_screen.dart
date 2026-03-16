@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../services/session_service.dart';
 import '../../data/repositories/splash_repository.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -72,35 +71,38 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _initApp() async {
+    // ✅ FIXED: Load data first, THEN animate and wait
+    // This ensures data is always loaded before navigation
+    final dataFuture = _loadData();
+
     await Future.wait([
       _controller.forward(),
-      _loadData(),
-      Future.delayed(const Duration(milliseconds: 2000)),
+      dataFuture,
+      Future.delayed(const Duration(milliseconds: 2000)), // Minimum splash time
     ]);
+
     if (!mounted) return;
     _navigate();
   }
 
   Future<void> _loadData() async {
     try {
-      await Future.wait([
-        SplashRepository.loadSessionState(),
-        SplashRepository.loadDropdowns(),
-      ]);
-    } catch (_) {
+      // Sequential — loadDropdowns needs cachedIsLoggedIn from loadSessionState.
+      await SplashRepository.loadSessionState();
+      await SplashRepository.loadDropdowns();
+
+      debugPrint('[SplashScreen] Data loaded successfully');
+    } catch (e) {
+      debugPrint('[SplashScreen] Data loading failed: $e');
       // Never crash the splash — screens reload their own data if needed
     }
   }
 
   void _navigate() {
-    final String route;
-    if (SplashRepository.cachedIsLoggedIn) {
-      route = '/home';
-    } else if (!SplashRepository.cachedIsOnboardDone) {
-      route = '/onboarding';
-    } else {
-      route = '/login';
-    }
+    // Logged in → home. Everyone else → login.
+    // Registration is reached only by tapping "Register" on the login screen.
+    final String route = SplashRepository.cachedIsLoggedIn ? '/home' : '/login';
+    debugPrint('[SplashScreen] Navigating to: $route');
     Navigator.of(context).pushReplacementNamed(route);
   }
 
@@ -210,7 +212,7 @@ class _SplashScreenState extends State<SplashScreen>
               errorBuilder: (_, __, ___) => const Center(
                 child: Icon(
                   Icons.car_repair_rounded,
-                  color: const Color(0xFFFCC247),
+                  color: Color(0xFFFCC247),
                   size:  52,
                 ),
               ),

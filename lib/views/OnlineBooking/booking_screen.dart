@@ -2,6 +2,8 @@ import 'package:filter_corporate_customer/widgets/custom_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/booking_model.dart';
+import '../../models/branch_model.dart';
+import '../../models/department_model.dart';
 import '../../utils/app_colors.dart';
 import '../../utils/app_text_styles.dart';
 import '../../widgets/custom_button.dart';
@@ -44,11 +46,11 @@ class _BookingBody extends StatelessWidget {
           Expanded(
             child: vm.isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primaryLight))
+                child: CircularProgressIndicator(
+                    color: AppColors.primaryLight))
                 : isWide
-                    ? _WideLayout(vm: vm)
-                    : _NarrowLayout(vm: vm),
+                ? _WideLayout(vm: vm)
+                : _NarrowLayout(vm: vm),
           ),
         ],
       ),
@@ -123,25 +125,25 @@ class _WideLayout extends StatelessWidget {
 
 /// Returns all form section widgets in order
 List<Widget> _formSections(BuildContext context, BookingViewModel vm) => [
+  SizedBox(height: 12,),                     // 1
+  _BranchSection(vm: vm),
+  SizedBox(height: 12,),                     // 1
   _DepartmentSection(vm: vm),               // 0
   SizedBox(height: 12,),
-  _VehicleSection(vm: vm),
-  SizedBox(height: 12,),                     // 1
-  _BranchSection(vm: vm),                    // 2
+  _VehicleSection(vm: vm), // 2
   SizedBox(height: 12,),
   _DateTimeSection(vm: vm),                  // 3
   SizedBox(height: 12,),
   _NotesSection(vm: vm),                     // 4
   SizedBox(height: 12,),
-  _WalletSection(vm: vm),                    // 5
-  SizedBox(height: 12,),
   _SubmitSection(vm: vm),                    // 6
-    ];
+];
 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Department selector – horizontal scrolling chips
 // ─────────────────────────────────────────────────────────────────────────────
+
 
 class _DepartmentSection extends StatelessWidget {
   final BookingViewModel vm;
@@ -152,7 +154,57 @@ class _DepartmentSection extends StatelessWidget {
     return _SectionCard(
       title: 'Select Department',
       icon: Icons.build_outlined,
-      child: _StyledDropdown<DepartmentModel>(
+      child: vm.isDepartmentsLoading
+          ? const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: AppColors.primaryLight,
+                  strokeWidth: 2,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Loading departments...',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      )
+          : vm.departments.isEmpty
+          ? Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Icon(
+              Icons.info_outline,
+              color: Colors.grey.shade400,
+              size: 32,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              vm.selectedBranch != null
+                  ? 'No departments available for ${vm.selectedBranch!.name}'
+                  : 'Please select a branch first',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: Colors.grey.shade500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      )
+          : _StyledDropdown<DepartmentModel>(
         value: vm.selectedDepartment,
         hint: 'Choose a department',
         items: vm.departments,
@@ -169,10 +221,10 @@ class _DepartmentSection extends StatelessWidget {
       ),
     );
   }
-}
-// ─────────────────────────────────────────────────────────────────────────────
+}// ─────────────────────────────────────────────────────────────────────────────
 // 2. Vehicle dropdown
 // ─────────────────────────────────────────────────────────────────────────────
+
 
 class _VehicleSection extends StatelessWidget {
   final BookingViewModel vm;
@@ -183,7 +235,55 @@ class _VehicleSection extends StatelessWidget {
     return _SectionCard(
       title: 'Select Vehicle',
       icon: Icons.directions_car_outlined,
-      child: _StyledDropdown<BookingVehicleModel>(
+      child: vm.isVehiclesLoading
+          ? const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: AppColors.primaryLight,
+                  strokeWidth: 2,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                'Loading vehicles...',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      )
+          : vm.vehicles.isEmpty
+          ? Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Icon(
+              Icons.info_outline,
+              color: Colors.grey.shade400,
+              size: 32,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'No vehicles found. Please add a vehicle first.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: Colors.grey.shade500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      )
+          : _StyledDropdown<BookingVehicleModel>(
         value: vm.selectedVehicle,
         hint: 'Choose a vehicle',
         items: vm.vehicles,
@@ -202,7 +302,6 @@ class _VehicleSection extends StatelessWidget {
     );
   }
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // 3. Branch dropdown
 // ─────────────────────────────────────────────────────────────────────────────
@@ -244,6 +343,7 @@ class _DateTimeSection extends StatelessWidget {
   final BookingViewModel vm;
   const _DateTimeSection({required this.vm});
 
+
   Future<void> _pickDate(BuildContext context) async {
     final now = DateTime.now();
     final picked = await showDatePicker(
@@ -254,9 +354,26 @@ class _DateTimeSection extends StatelessWidget {
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
           colorScheme: const ColorScheme.light(
-            primary: AppColors.primaryLight,
-            onPrimary: AppColors.onPrimaryLight,
-            surface: AppColors.surfaceLight,
+            primary: AppColors.primaryLight,           // Header background
+            onPrimary: AppColors.onPrimaryLight,       // Header text
+            surface: AppColors.surfaceLight,           // Calendar background
+            onSurface: AppColors.onBackgroundLight,    // Calendar text
+          ),
+          // Better button styling
+          textButtonTheme: TextButtonThemeData(
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.secondaryLight, // Button text color
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          // Dialog styling
+          dialogTheme: DialogThemeData(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
         ),
         child: child!,
@@ -264,7 +381,6 @@ class _DateTimeSection extends StatelessWidget {
     );
     if (picked != null) await vm.selectDate(picked);
   }
-
   @override
   Widget build(BuildContext context) {
     return _SectionCard(
@@ -478,9 +594,9 @@ class _NotesSectionState extends State<_NotesSection> {
         decoration: InputDecoration(
           hintText: 'Any special instructions or notes for the technician…',
           hintStyle:
-              AppTextStyles.bodyMedium.copyWith(color: Colors.grey.shade400),
+          AppTextStyles.bodyMedium.copyWith(color: Colors.grey.shade400),
           border:
-              OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: Colors.grey.shade300),
@@ -488,7 +604,7 @@ class _NotesSectionState extends State<_NotesSection> {
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide:
-                const BorderSide(color: AppColors.primaryLight, width: 2),
+            const BorderSide(color: AppColors.primaryLight, width: 2),
           ),
           contentPadding: const EdgeInsets.all(14),
         ),
@@ -497,104 +613,6 @@ class _NotesSectionState extends State<_NotesSection> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 6. Wallet balance + pay from wallet toggle
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _WalletSection extends StatelessWidget {
-  final BookingViewModel vm;
-  const _WalletSection({required this.vm});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.secondaryLight,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Wallet info
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight.withOpacity(0.15),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.account_balance_wallet_outlined,
-                color: AppColors.primaryLight, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Wallet Balance',
-                    style: AppTextStyles.bodySmall
-                        .copyWith(color: Colors.white70)),
-                Text(
-                  'SAR ${_fmt(vm.walletBalance)}',
-                  style: AppTextStyles.h3.copyWith(
-                    color: AppColors.primaryLight,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Pay from wallet toggle
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text('Pay from Wallet',
-                  style: AppTextStyles.bodySmall
-                      .copyWith(color: Colors.white70)),
-              const SizedBox(height: 4),
-              GestureDetector(
-                onTap: vm.togglePayFromWallet,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 50,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: vm.payFromWallet
-                        ? AppColors.primaryLight
-                        : Colors.white24,
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  child: AnimatedAlign(
-                    duration: const Duration(milliseconds: 200),
-                    alignment: vm.payFromWallet
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
-                    child: Container(
-                      margin: const EdgeInsets.all(3),
-                      width: 20,
-                      height: 20,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 7. Submit button + validation summary
@@ -612,7 +630,6 @@ class _SubmitSection extends StatelessWidget {
     if (vm.selectedVehicle == null) missing.add('Vehicle');
     if (vm.selectedBranch == null) missing.add('Branch');
     if (vm.selectedDate == null) missing.add('Date');
-    if (vm.selectedSlot == null) missing.add('Time Slot');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -661,24 +678,47 @@ class _SubmitSection extends StatelessWidget {
             onPressed: vm.isSubmitting || !vm.canSubmit
                 ? () {}
                 : () async {
-                    final success = await vm.submitBooking(context);
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          success
-                              ? '✅ Booking submitted! You will receive a confirmation shortly.'
-                              : '❌ ${vm.errorMessage.isEmpty ? 'Something went wrong.' : vm.errorMessage}',
-                        ),
-                        backgroundColor: success
-                            ? Colors.green.shade600
-                            : Colors.redAccent,
-                        behavior: SnackBarBehavior.floating,
-                        duration: const Duration(seconds: 4),
-                      ),
-                    );
-                    if (success) vm.resetSubmitStatus();
+              final success = await vm.submitBooking(context);
+              if (!context.mounted) return;
+
+              if (success) {
+                // Build a human-readable invoice ref for the payment screen header
+                final invoiceRef =
+                    '${vm.selectedBranch?.name ?? 'Service'} – '
+                    '${vm.selectedDepartment?.name ?? ''}';
+
+                // Build bookedFor the same way submitBooking() did so the
+                // payment screen has the identical value for the API body.
+                final slotHour  = vm.selectedSlot?.hour ?? 9;
+                final bookedFor = DateTime(
+                  vm.selectedDate!.year,
+                  vm.selectedDate!.month,
+                  vm.selectedDate!.day,
+                  slotHour, 0, 0,
+                );
+
+                vm.resetSubmitStatus();
+
+                await Navigator.pushNamed(
+                  context,
+                  '/make-payment',
+                  arguments: {
+                    // Display
+                    'invoiceRef':    invoiceRef,
+                    'totalAmount':   0.0,  // amount is determined after approval
+
+                    // Booking context — forwarded to /corporate/make_payment body
+                    'branchId':      vm.selectedBranch?.id     ?? '',
+                    'vehicleId':     vm.selectedVehicle?.id    ?? '',
+                    'departmentId':  vm.selectedDepartment?.id ?? '',
+                    'bookedFor':     bookedFor,
+                    'notes':         vm.notes,
+                    'payFromWallet': vm.payFromWallet,
                   },
+                );
+              }
+              // Failure handled inside submitBooking() via AppAlert — no snackbar needed.
+            },
           ),
         ),
       ],
@@ -729,7 +769,7 @@ class _SectionCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child:
-                    Icon(icon, size: 16, color: AppColors.secondaryLight),
+                Icon(icon, size: 16, color: AppColors.secondaryLight),
               ),
               const SizedBox(width: 8),
               Text(title,
@@ -778,7 +818,7 @@ class _StyledDropdown<T> extends StatelessWidget {
               .copyWith(color: Colors.grey.shade500)),
       decoration: InputDecoration(
         border:
-            OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: BorderSide(color: Colors.grey.shade300),
@@ -786,10 +826,10 @@ class _StyledDropdown<T> extends StatelessWidget {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide:
-              const BorderSide(color: AppColors.primaryLight, width: 2),
+          const BorderSide(color: AppColors.primaryLight, width: 2),
         ),
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       ),
       items: items.map((item) {
         return DropdownMenuItem<T>(

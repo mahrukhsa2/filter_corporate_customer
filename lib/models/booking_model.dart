@@ -2,41 +2,49 @@
 // lib/models/booking_model.dart
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// booking_model.dart (Extended)
-// Additional model for My Bookings / Orders history
-// ─────────────────────────────────────────────────────────────────────────────
-
 class BookingHistoryModel {
-  final String id;
-  final String serviceName;
-  final DateTime date;
-  final String branchName;
-  final String status; // Completed, In Progress, Upcoming, Cancelled
+  final String  id;
+  final String  serviceName;   // workshopName from API
+  final DateTime date;         // submittedAt from API
+  final DateTime? bookedFor;   // bookedFor from API
+  final String  branchName;
+  final String  status;        // display status mapped from API status
+  final String? bookingCode;
+  final String? paymentMethod;
   final String? invoiceNumber;
   final double? amount;
-  final bool isPaid;
-  final String? vehicleInfo;
+  final bool    isPaid;
+  final String? vehicleInfo;   // formatted from vehicle object
 
   const BookingHistoryModel({
     required this.id,
     required this.serviceName,
     required this.date,
+    this.bookedFor,
     required this.branchName,
     required this.status,
+    this.bookingCode,
+    this.paymentMethod,
     this.invoiceNumber,
     this.amount,
     this.isPaid = false,
     this.vehicleInfo,
   });
 
-  /// Factory constructor from API order response
+  /// Factory from API order response.
+  /// API shape:
+  /// {
+  ///   "id", "status", "submittedAt", "branchId", "branchName",
+  ///   "workshopId", "workshopName",
+  ///   "vehicle": { "id", "plateNo", "make", "model", "year" },
+  ///   "departments": [],
+  ///   "bookedFor", "bookingCode", "paymentMethod", "notes", "amount"
+  /// }
   factory BookingHistoryModel.fromOrderMap(Map<String, dynamic> map) {
-    // Map API status to display status
-    final apiStatus = map['status']?.toString().toLowerCase() ?? '';
+    final apiStatus    = map['status']?.toString().toLowerCase() ?? '';
     final displayStatus = _mapApiStatus(apiStatus);
 
-    // Parse date
+    // submittedAt
     DateTime date;
     try {
       date = DateTime.parse(map['submittedAt']?.toString() ?? '');
@@ -44,53 +52,79 @@ class BookingHistoryModel {
       date = DateTime.now();
     }
 
+    // bookedFor
+    DateTime? bookedFor;
+    try {
+      if (map['bookedFor'] != null) {
+        bookedFor = DateTime.parse(map['bookedFor'].toString());
+      }
+    } catch (_) {}
+
+    // vehicle → formatted string
+    String? vehicleInfo;
+    final vehicle = map['vehicle'];
+    if (vehicle is Map<String, dynamic>) {
+      final make  = vehicle['make']?.toString() ?? '';
+      final model = vehicle['model']?.toString() ?? '';
+      final plate = vehicle['plateNo']?.toString() ?? '';
+      final year  = vehicle['year']?.toString() ?? '';
+      vehicleInfo = '$make $model $year – $plate'.trim();
+    }
+
+    // amount
+    double? amount;
+    if (map['amount'] != null) {
+      amount = (map['amount'] as num).toDouble();
+    }
+
     return BookingHistoryModel(
-      id: map['id']?.toString() ?? '',
-      serviceName: map['workshopName']?.toString() ?? 'Service',
-      date: date,
-      branchName: map['branchName']?.toString() ?? '',
-      status: displayStatus,
-      invoiceNumber: null, // Will be populated when order is completed
-      amount: null,
-      isPaid: false,
-      vehicleInfo: null, // API doesn't return vehicle info in list
+      id:            map['id']?.toString() ?? '',
+      serviceName:   map['workshopName']?.toString() ?? 'Service',
+      date:          date,
+      bookedFor:     bookedFor,
+      branchName:    map['branchName']?.toString() ?? '',
+      status:        displayStatus,
+      bookingCode:   map['bookingCode']?.toString(),
+      paymentMethod: map['paymentMethod']?.toString(),
+      invoiceNumber: null,   // populated when order is completed
+      amount:        amount,
+      isPaid:        false,
+      vehicleInfo:   vehicleInfo,
     );
   }
 
-  /// Maps API status to display-friendly status
-  static String _mapApiStatus(String apiStatus) {
-    switch (apiStatus) {
-      case 'submitted':
-      case 'pending':
-        return 'Upcoming';
-      case 'approved':
-      case 'in_progress':
-      case 'processing':
-        return 'In Progress';
-      case 'completed':
-      case 'delivered':
-        return 'Completed';
-      case 'cancelled':
-      case 'rejected':
-        return 'Cancelled';
-      default:
-        return 'Upcoming';
-    }
-  }
+  static String _mapApiStatus(String s) => switch (s) {
+    'submitted'                        => 'Submitted',
+    'approved'                         => 'Approved',
+    'in_progress'                      => 'In Progress',
+    'completed' || 'invoiced'          => 'Completed',
+    'cancelled'                        => 'Cancelled',
+    'rejected'                         => 'Rejected',
+        _    =>     '',
+  };
 
   String get formattedDate {
-    final day = date.day.toString().padLeft(2, '0');
-    final months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
-    ];
-    final month = months[date.month - 1];
-    final year = date.year;
-    return '$day $month $year';
+    const months = ['Jan','Feb','Mar','Apr','May','Jun',
+      'Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${date.day.toString().padLeft(2,'0')} '
+        '${months[date.month - 1]} ${date.year}';
+  }
+
+  String get formattedBookedFor {
+    if (bookedFor == null) return '—';
+    const months = ['Jan','Feb','Mar','Apr','May','Jun',
+      'Jul','Aug','Sep','Oct','Nov','Dec'];
+    final h = bookedFor!.hour.toString().padLeft(2,'0');
+    final m = bookedFor!.minute.toString().padLeft(2,'0');
+    return '${bookedFor!.day.toString().padLeft(2,'0')} '
+        '${months[bookedFor!.month - 1]} ${bookedFor!.year}  $h:$m';
   }
 }
 
-/// Response model for GET /corporate/orders
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /corporate/orders response
+// ─────────────────────────────────────────────────────────────────────────────
+
 class OrdersResponseModel {
   final bool success;
   final List<BookingHistoryModel> orders;
@@ -107,30 +141,30 @@ class OrdersResponseModel {
   });
 
   factory OrdersResponseModel.fromMap(Map<String, dynamic> map) {
-    final ordersList = map['orders'] as List<dynamic>? ?? [];
-
+    final list = map['orders'] as List<dynamic>? ?? [];
     return OrdersResponseModel(
       success: map['success'] as bool? ?? false,
-      orders: ordersList
-          .map((item) => BookingHistoryModel.fromOrderMap(
-          item as Map<String, dynamic>))
-          .toList(),
-      total: map['total'] as int? ?? 0,
-      limit: map['limit'] as int? ?? 20,
-      offset: map['offset'] as int? ?? 0,
+      orders:  list.map((e) =>
+          BookingHistoryModel.fromOrderMap(e as Map<String, dynamic>)).toList(),
+      total:   map['total']  as int? ?? 0,
+      limit:   map['limit']  as int? ?? 10,
+      offset:  map['offset'] as int? ?? 0,
     );
   }
 }
 
-/// Detailed order model (for single order fetch if needed)
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /corporate/orders/:id detail
+// ─────────────────────────────────────────────────────────────────────────────
+
 class OrderDetailModel {
-  final String id;
-  final String status;
+  final String   id;
+  final String   status;
   final DateTime submittedAt;
-  final String branchId;
-  final String branchName;
-  final String workshopId;
-  final String workshopName;
+  final String   branchId;
+  final String   branchName;
+  final String   workshopId;
+  final String   workshopName;
 
   const OrderDetailModel({
     required this.id,
@@ -144,89 +178,23 @@ class OrderDetailModel {
 
   factory OrderDetailModel.fromMap(Map<String, dynamic> map) {
     DateTime date;
-    try {
-      date = DateTime.parse(map['submittedAt']?.toString() ?? '');
-    } catch (_) {
-      date = DateTime.now();
-    }
-
+    try { date = DateTime.parse(map['submittedAt']?.toString() ?? ''); }
+    catch (_) { date = DateTime.now(); }
     return OrderDetailModel(
-      id: map['id']?.toString() ?? '',
-      status: map['status']?.toString() ?? '',
-      submittedAt: date,
-      branchId: map['branchId']?.toString() ?? '',
-      branchName: map['branchName']?.toString() ?? '',
-      workshopId: map['workshopId']?.toString() ?? '',
+      id:           map['id']?.toString() ?? '',
+      status:       map['status']?.toString() ?? '',
+      submittedAt:  date,
+      branchId:     map['branchId']?.toString() ?? '',
+      branchName:   map['branchName']?.toString() ?? '',
+      workshopId:   map['workshopId']?.toString() ?? '',
       workshopName: map['workshopName']?.toString() ?? '',
     );
   }
 }
 
-// ── Department ────────────────────────────────────────────────────────────────
-
-class DepartmentModel {
-  final String id;
-  final String name;
-  // API does not return an icon — we use a default emoji fallback.
-  // If the backend adds an icon field later, just update fromMap().
-  final String icon;
-
-  const DepartmentModel({
-    required this.id,
-    required this.name,
-    this.icon = '🔧',
-  });
-
-  factory DepartmentModel.fromMap(Map<String, dynamic> map) {
-    return DepartmentModel(
-      id:   map['id']?.toString()   ?? '',
-      name: map['name']?.toString() ?? '',
-      icon: map['icon']?.toString() ?? '🔧',
-    );
-  }
-
-  // Equality by id — required so DropdownButton can match selected value
-  @override
-  bool operator ==(Object other) =>
-      other is DepartmentModel && other.id == id;
-
-  @override
-  int get hashCode => id.hashCode;
-}
-
-// ── Branch ────────────────────────────────────────────────────────────────────
-
-class BranchModel {
-  final String id;
-  final String name;
-  final String address; // real API returns address, not city
-
-  const BranchModel({
-    required this.id,
-    required this.name,
-    this.address = '',
-  });
-
-  factory BranchModel.fromMap(Map<String, dynamic> map) {
-    return BranchModel(
-      id:      map['id']?.toString()      ?? '',
-      name:    map['name']?.toString()    ?? '',
-      address: map['address']?.toString() ?? '',
-    );
-  }
-
-  // Used by the dropdown label — shows name only to keep it compact
-  String get displayName => name;
-
-  @override
-  bool operator ==(Object other) =>
-      other is BranchModel && other.id == id;
-
-  @override
-  int get hashCode => id.hashCode;
-}
-
-// ── Vehicle (booking-scoped — not the full vehicle module model) ──────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Booking vehicle (used in booking form)
+// ─────────────────────────────────────────────────────────────────────────────
 
 class BookingVehicleModel {
   final String id;
@@ -234,6 +202,8 @@ class BookingVehicleModel {
   final String model;
   final String plateNumber;
   final bool   isDefault;
+  final int?   year;
+  final String? color;
 
   const BookingVehicleModel({
     required this.id,
@@ -241,58 +211,75 @@ class BookingVehicleModel {
     required this.model,
     required this.plateNumber,
     this.isDefault = false,
+    this.year,
+    this.color,
   });
 
-  factory BookingVehicleModel.fromMap(Map<String, dynamic> map) {
-    return BookingVehicleModel(
-      id:          map['id']?.toString()          ?? '',
-      make:        map['make']?.toString()        ?? '',
-      model:       map['model']?.toString()       ?? '',
-      plateNumber: map['plateNumber']?.toString() ?? '',
-      isDefault:   map['isDefault'] as bool?      ?? false,
-    );
-  }
+  factory BookingVehicleModel.fromMap(Map<String, dynamic> map) =>
+      BookingVehicleModel(
+        id:          map['id']?.toString() ?? '',
+        make:        map['make']?.toString() ?? '',
+        model:       map['model']?.toString() ?? '',
+        plateNumber: map['plateNumber']?.toString() ?? '',
+        isDefault:   map['isDefault'] as bool? ?? false,
+        year:        map['year'] as int?,
+        color:       map['color']?.toString(),
+      );
 
-  String get displayName => '$make $model – $plateNumber';
+  factory BookingVehicleModel.fromApiMap(Map<String, dynamic> map) =>
+      BookingVehicleModel(
+        id:          map['id']?.toString() ?? '',
+        make:        map['make']?.toString() ?? '',
+        model:       map['model']?.toString() ?? '',
+        plateNumber: map['plateNo']?.toString() ?? '',
+        isDefault:   false,
+        year:        map['year'] as int?,
+        color:       map['color']?.toString(),
+      );
+
+  String get displayName => year != null
+      ? '$make $model $year – $plateNumber'
+      : '$make $model – $plateNumber';
 
   @override
-  bool operator ==(Object other) =>
-      other is BookingVehicleModel && other.id == id;
-
+  bool operator ==(Object other) => other is BookingVehicleModel && other.id == id;
   @override
   int get hashCode => id.hashCode;
 }
 
-// ── Time slot ─────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Time slot (used in booking form)
+// ─────────────────────────────────────────────────────────────────────────────
 
 class TimeSlotModel {
   final String id;
   final String label;
   final bool   available;
+  final int?   hour;
 
   const TimeSlotModel({
     required this.id,
     required this.label,
     required this.available,
+    this.hour,
   });
 
-  factory TimeSlotModel.fromMap(Map<String, dynamic> map) {
-    return TimeSlotModel(
-      id:        map['id']?.toString()     ?? '',
-      label:     map['label']?.toString()  ?? '',
-      available: map['available'] as bool? ?? true,
-    );
-  }
+  factory TimeSlotModel.fromMap(Map<String, dynamic> map) => TimeSlotModel(
+    id:        map['id']?.toString() ?? '',
+    label:     map['label']?.toString() ?? '',
+    available: map['available'] as bool? ?? true,
+    hour:      map['hour'] as int?,
+  );
 
   @override
-  bool operator ==(Object other) =>
-      other is TimeSlotModel && other.id == id;
-
+  bool operator ==(Object other) => other is TimeSlotModel && other.id == id;
   @override
   int get hashCode => id.hashCode;
 }
 
-// ── Submit payload ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Booking submit payload
+// ─────────────────────────────────────────────────────────────────────────────
 
 class BookingSubmitPayload {
   final String   departmentId;

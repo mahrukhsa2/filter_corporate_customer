@@ -7,6 +7,7 @@ import '../../../utils/app_colors.dart';
 import '../../../utils/app_text_styles.dart';
 import '../../../widgets/custom_button.dart';
 import 'quotation_history_view_model.dart';
+import '../../../services/invoice_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Entry point
@@ -40,19 +41,27 @@ class _QHBody extends StatelessWidget {
       backgroundColor: AppColors.backgroundLight,
       body: Column(
         children: [
-        CustomAppBar(title: "Quotation History", showBackButton: true,),
-          // ── Content ──────────────────────────────────────────────────
+          const CustomAppBar(title: 'Quotation History', showBackButton: true),
+
           Expanded(
             child: vm.isLoading
                 ? const Center(
                 child: CircularProgressIndicator(
                     color: AppColors.primaryLight))
-                : RefreshIndicator(
-              color: AppColors.primaryLight,
-              onRefresh: vm.refresh,
-              child: isWide
-                  ? _WideLayout(vm: vm)
-                  : _NarrowLayout(vm: vm),
+                : vm.hasError
+                ? _ErrorState(vm: vm)
+            // ── Stack: layout + silent filter overlay ─────────────
+                : Stack(
+              children: [
+                RefreshIndicator(
+                  color: AppColors.primaryLight,
+                  onRefresh: vm.refresh,
+                  child: isWide
+                      ? _WideLayout(vm: vm)
+                      : _NarrowLayout(vm: vm),
+                ),
+                // isFiltering handled inside the table — no full-screen overlay
+              ],
             ),
           ),
         ],
@@ -62,29 +71,113 @@ class _QHBody extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Layouts
+// Error State
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _NarrowLayout extends StatelessWidget {
+class _ErrorState extends StatelessWidget {
+  final QuotationHistoryViewModel vm;
+  const _ErrorState({required this.vm});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                  color: Colors.red.shade50, shape: BoxShape.circle),
+              child: Icon(Icons.wifi_off_rounded,
+                  size: 60, color: Colors.red.shade300),
+            ),
+            const SizedBox(height: 24),
+            Text('Could not load quotations',
+                style: AppTextStyles.h3.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.onBackgroundLight)),
+            const SizedBox(height: 8),
+            Text(vm.errorMessage,
+                style: AppTextStyles.bodyMedium
+                    .copyWith(color: Colors.grey.shade600),
+                textAlign: TextAlign.center),
+            const SizedBox(height: 28),
+            CustomButton(
+              text: 'Retry',
+              onPressed: vm.refresh,
+              backgroundColor: AppColors.primaryLight,
+              textColor: AppColors.onPrimaryLight,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Narrow layout
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _NarrowLayout extends StatefulWidget {
   final QuotationHistoryViewModel vm;
   const _NarrowLayout({required this.vm});
 
   @override
+  State<_NarrowLayout> createState() => _NarrowLayoutState();
+}
+
+class _NarrowLayoutState extends State<_NarrowLayout> {
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
+      widget.vm.loadMore();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return CustomScrollView(
+      controller: _scroll,
       slivers: [
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          sliver: SliverToBoxAdapter(child: _FiltersBar(vm: vm)),
+          sliver: SliverToBoxAdapter(child: _FiltersBar(vm: widget.vm)),
         ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-          sliver: SliverToBoxAdapter(child: _TableCard(vm: vm)),
+          sliver: SliverToBoxAdapter(child: _TableCard(vm: widget.vm)),
         ),
+        if (widget.vm.isLoadingMore)
+          const SliverPadding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            sliver: SliverToBoxAdapter(
+              child: Center(
+                child: CircularProgressIndicator(color: AppColors.primaryLight),
+              ),
+            ),
+          ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 32),
           sliver: SliverToBoxAdapter(
-            child: vm.summary != null ? _SummaryCard(summary: vm.summary!) : const SizedBox(),
+            child: widget.vm.summary != null
+                ? _SummaryCard(summary: widget.vm.summary!)
+                : const SizedBox(),
           ),
         ),
       ],
@@ -92,17 +185,47 @@ class _NarrowLayout extends StatelessWidget {
   }
 }
 
-class _WideLayout extends StatelessWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Wide layout
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _WideLayout extends StatefulWidget {
   final QuotationHistoryViewModel vm;
   const _WideLayout({required this.vm});
 
   @override
+  State<_WideLayout> createState() => _WideLayoutState();
+}
+
+class _WideLayoutState extends State<_WideLayout> {
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 200) {
+      widget.vm.loadMore();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return CustomScrollView(
+      controller: _scroll,
       slivers: [
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-          sliver: SliverToBoxAdapter(child: _FiltersBar(vm: vm)),
+          sliver: SliverToBoxAdapter(child: _FiltersBar(vm: widget.vm)),
         ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(24, 14, 24, 0),
@@ -110,24 +233,32 @@ class _WideLayout extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(flex: 7, child: _TableCard(vm: vm)),
+                Expanded(flex: 7, child: _TableCard(vm: widget.vm)),
                 const SizedBox(width: 20),
-                SizedBox(
-                  width: 280,
-                  child: vm.summary != null
-                      ? _SummaryCard(summary: vm.summary!)
+                Expanded(
+                  flex: 3,
+                  child: widget.vm.summary != null
+                      ? _SummaryCard(summary: widget.vm.summary!)
                       : const SizedBox(),
                 ),
               ],
             ),
           ),
         ),
+        if (widget.vm.isLoadingMore)
+          const SliverPadding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            sliver: SliverToBoxAdapter(
+              child: Center(
+                child: CircularProgressIndicator(color: AppColors.primaryLight),
+              ),
+            ),
+          ),
         const SliverPadding(padding: EdgeInsets.only(bottom: 32)),
       ],
     );
   }
 }
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Filters bar
@@ -151,15 +282,14 @@ class _FiltersBarState extends State<_FiltersBar> {
   }
 
   Future<void> _pickDate(bool isFrom) async {
-    final now     = DateTime.now();
     final current = isFrom
         ? widget.vm.filters.fromDate
         : widget.vm.filters.toDate;
-    final picked  = await showDatePicker(
+    final picked = await showDatePicker(
       context: context,
-      initialDate: current ?? now,
+      initialDate: current ?? DateTime.now(),
       firstDate: DateTime(2023),
-      lastDate: now,
+      lastDate: DateTime.now(),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
           colorScheme: const ColorScheme.light(
@@ -187,10 +317,8 @@ class _FiltersBarState extends State<_FiltersBar> {
         color: AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
+          BoxShadow(color: Colors.black.withOpacity(0.05),
+              blurRadius: 8, offset: const Offset(0, 2)),
         ],
       ),
       child: Column(
@@ -202,9 +330,7 @@ class _FiltersBarState extends State<_FiltersBar> {
               Expanded(
                 child: _FilterChip(
                   icon: Icons.calendar_today_outlined,
-                  label: f.fromDate != null
-                      ? _shortDate(f.fromDate!)
-                      : 'From Date',
+                  label: f.fromDate != null ? _shortDate(f.fromDate!) : 'From Date',
                   active: f.fromDate != null,
                   onTap: () => _pickDate(true),
                 ),
@@ -217,9 +343,7 @@ class _FiltersBarState extends State<_FiltersBar> {
               Expanded(
                 child: _FilterChip(
                   icon: Icons.calendar_today_outlined,
-                  label: f.toDate != null
-                      ? _shortDate(f.toDate!)
-                      : 'To Date',
+                  label: f.toDate != null ? _shortDate(f.toDate!) : 'To Date',
                   active: f.toDate != null,
                   onTap: () => _pickDate(false),
                 ),
@@ -227,10 +351,7 @@ class _FiltersBarState extends State<_FiltersBar> {
               if (f.hasAny) ...[
                 const SizedBox(width: 8),
                 GestureDetector(
-                  onTap: () {
-                    _productCtrl.clear();
-                    vm.clearFilters();
-                  },
+                  onTap: () { _productCtrl.clear(); vm.clearFilters(); },
                   child: Container(
                     padding: const EdgeInsets.all(7),
                     decoration: BoxDecoration(
@@ -246,16 +367,16 @@ class _FiltersBarState extends State<_FiltersBar> {
           ),
           const SizedBox(height: 10),
 
-          // ── Row 2: product search + status + submitted by ──────────────
+          // ── Row 2: search + status ─────────────────────────────────────
           Row(
             children: [
-              // Product search
               Expanded(
                 flex: 3,
                 child: SizedBox(
                   height: 40,
                   child: TextField(
                     controller: _productCtrl,
+                    // ✅ Debounced via VM — no full reload on every keystroke
                     onChanged: (v) => vm.updateFilters(
                         f.copyWith(productQuery: v)),
                     style: AppTextStyles.bodySmall,
@@ -263,8 +384,7 @@ class _FiltersBarState extends State<_FiltersBar> {
                       hintText: 'Product/Service',
                       hintStyle: AppTextStyles.bodySmall
                           .copyWith(color: Colors.grey.shade400),
-                      prefixIcon: const Icon(Icons.search_rounded,
-                          size: 16),
+                      prefixIcon: const Icon(Icons.search_rounded, size: 16),
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 10),
@@ -272,8 +392,7 @@ class _FiltersBarState extends State<_FiltersBar> {
                           borderRadius: BorderRadius.circular(10)),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
-                        borderSide:
-                        BorderSide(color: Colors.grey.shade300),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
@@ -285,8 +404,6 @@ class _FiltersBarState extends State<_FiltersBar> {
                 ),
               ),
               const SizedBox(width: 8),
-
-              // Status dropdown
               Expanded(
                 flex: 2,
                 child: _StatusDropdown(
@@ -294,19 +411,6 @@ class _FiltersBarState extends State<_FiltersBar> {
                   onChanged: (s) => vm.updateFilters(s == null
                       ? f.copyWith(clearStatus: true)
                       : f.copyWith(status: s)),
-                ),
-              ),
-              const SizedBox(width: 8),
-
-              // Submitted by dropdown
-              Expanded(
-                flex: 2,
-                child: _SubmittedByDropdown(
-                  options: vm.submittedByOptions,
-                  value: f.submittedBy,
-                  onChanged: (v) => vm.updateFilters(v == null
-                      ? f.copyWith(clearSubmittedBy: true)
-                      : f.copyWith(submittedBy: v)),
                 ),
               ),
             ],
@@ -318,31 +422,24 @@ class _FiltersBarState extends State<_FiltersBar> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Fixed column widths — every cell (header + row) uses the same value
-// so header and data stay perfectly aligned during horizontal scroll.
+// Column widths
 // ─────────────────────────────────────────────────────────────────────────────
 
-const double _colQuotation   = 120.0;
-const double _colDate        = 100.0;
-const double _colProduct     = 200.0;
-const double _colQty         =  80.0;
-const double _colPrice       = 130.0;
-const double _colStatus      = 100.0;
-const double _colAction      = 110.0;
-const double _rowHPad        =  16.0; // horizontal padding each side of row
+const double _colQuotation = 120.0;
+const double _colDate      = 100.0;
+const double _colProduct   = 200.0;
+const double _colQty       =  80.0;
+const double _colPrice     = 130.0;
+const double _colStatus    = 100.0;
+const double _colAction    = 110.0;
+const double _rowHPad      =  16.0;
 
 double get _totalTableWidth =>
-    _rowHPad * 2 +
-        _colQuotation +
-        _colDate +
-        _colProduct +
-        _colQty +
-        _colPrice +
-        _colStatus +
-        _colAction;
+    _rowHPad * 2 + _colQuotation + _colDate + _colProduct +
+        _colQty + _colPrice + _colStatus + _colAction;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Table card — outer card clips + provides horizontal scroll
+// Table card
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _TableCard extends StatelessWidget {
@@ -356,13 +453,10 @@ class _TableCard extends StatelessWidget {
         color: AppColors.surfaceLight,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2)),
+          BoxShadow(color: Colors.black.withOpacity(0.05),
+              blurRadius: 8, offset: const Offset(0, 2)),
         ],
       ),
-      // ClipRRect keeps rounded corners when content scrolls horizontally
       child: ClipRRect(
         borderRadius: BorderRadius.circular(16),
         child: SingleChildScrollView(
@@ -372,34 +466,47 @@ class _TableCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // ── Header ─────────────────────────────────────────────
-                _TableHeader(),
+                const _TableHeader(),
+                // Filter-change spinner — only the table body spins
+                if (vm.isFiltering)
+                  SizedBox(
+                    width: _totalTableWidth,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                            color: AppColors.primaryLight),
+                      ),
+                    ),
+                  )
 
-                // ── Empty state ─────────────────────────────────────────
-                if (vm.items.isEmpty)
+                // Empty state
+                else if (vm.items.isEmpty)
                   SizedBox(
                     width: _totalTableWidth,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 40),
-                      child: Column(
-                        children: [
-                          Icon(Icons.inbox_outlined,
-                              size: 40, color: Colors.grey.shade300),
-                          const SizedBox(height: 10),
-                          Text('No quotations match your filters',
-                              style: AppTextStyles.bodyMedium
-                                  .copyWith(color: Colors.grey.shade400)),
-                        ],
-                      ),
+                      child: Column(children: [
+                        Icon(Icons.inbox_outlined,
+                            size: 40, color: Colors.grey.shade300),
+                        const SizedBox(height: 10),
+                        Text('No quotations match your filters',
+                            style: AppTextStyles.bodyMedium
+                                .copyWith(color: Colors.grey.shade400)),
+                      ]),
+                    ),
+                  )
+
+                // Data rows
+                else
+                  ...List.generate(
+                    vm.items.length,
+                        (i) => _TableRow(
+                      item:   vm.items[i],
+                      isEven: i % 2 == 0,
+                      isLast: i == vm.items.length - 1,
                     ),
                   ),
-
-                // ── Data rows ───────────────────────────────────────────
-                ...List.generate(vm.items.length, (i) => _TableRow(
-                  item:   vm.items[i],
-                  isEven: i % 2 == 0,
-                  isLast: i == vm.items.length - 1,
-                )),
               ],
             ),
           ),
@@ -410,7 +517,7 @@ class _TableCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Table header row
+// Table header
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _TableHeader extends StatelessWidget {
@@ -420,27 +527,20 @@ class _TableHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: _totalTableWidth,
-      padding: const EdgeInsets.symmetric(
-          horizontal: _rowHPad, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: _rowHPad, vertical: 14),
       color: AppColors.secondaryLight,
-      child: Row(
-        children: const [
-          _TH(label: 'Quotation #',      width: _colQuotation),
-          _TH(label: 'Date',             width: _colDate),
-          _TH(label: 'Product / Service',width: _colProduct),
-          _TH(label: 'Qty',              width: _colQty),
-          _TH(label: 'Quoted Price',     width: _colPrice),
-          _TH(label: 'Status',           width: _colStatus),
-          _TH(label: 'Action',           width: _colAction),
-        ],
-      ),
+      child: const Row(children: [
+        _TH(label: 'Quotation #',       width: _colQuotation),
+        _TH(label: 'Date',              width: _colDate),
+        _TH(label: 'Product / Service', width: _colProduct),
+        _TH(label: 'Qty',               width: _colQty),
+        _TH(label: 'Quoted Price',      width: _colPrice),
+        _TH(label: 'Status',            width: _colStatus),
+        _TH(label: 'Action',            width: _colAction),
+      ]),
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Header cell — fixed width, no Expanded
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _TH extends StatelessWidget {
   final String label;
@@ -453,131 +553,140 @@ class _TH extends StatelessWidget {
       width: width,
       child: Text(label,
           style: AppTextStyles.bodySmall.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-            fontSize: 12,
-          )),
+              color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Data row
+// Table row
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _TableRow extends StatelessWidget {
   final QuotationHistoryItem item;
-  final bool isEven;
-  final bool isLast;
-  const _TableRow({
-    required this.item,
-    required this.isEven,
-    required this.isLast,
-  });
+  final bool isEven, isLast;
+  const _TableRow({required this.item, required this.isEven, required this.isLast});
 
   void _showRejectionReason(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(children: [
-          Icon(Icons.info_outline_rounded,
-              color: Colors.red.shade400, size: 20),
-          const SizedBox(width: 8),
-          const Text('Rejection Reason'),
-        ]),
-        content: Text(
-          item.rejectionReason ?? 'No reason provided.',
-          style:
-          AppTextStyles.bodyMedium.copyWith(color: Colors.grey.shade700),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Close')),
-        ],
-      ),
-    );
+    showDialog(context: context, builder: (_) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(children: [
+        Icon(Icons.info_outline_rounded, color: Colors.red.shade400, size: 20),
+        const SizedBox(width: 8),
+        const Text('Rejection Reason'),
+      ]),
+      content: Text(item.rejectionReason ?? 'No reason provided.',
+          style: AppTextStyles.bodyMedium.copyWith(color: Colors.grey.shade700)),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close')),
+      ],
+    ));
   }
 
   void _showDetails(BuildContext context) {
-    showModalBottomSheet(
+    InvoiceService.showInvoiceDetails(
+      context:   context,
+      invoiceId: item.id,
+    );
+  }
+
+  void _showFollowUp(BuildContext context) {
+    showDialog(
       context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _DetailSheet(item: item),
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(children: [
+          Icon(Icons.schedule_rounded, color: Colors.orange.shade600, size: 20),
+          const SizedBox(width: 8),
+          const Text('Follow Up'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Quotation: ${item.quotationNumber}',
+                style: AppTextStyles.bodySmall.copyWith(
+                    fontWeight: FontWeight.w700)),
+            const SizedBox(height: 6),
+            Text('${item.productService}  ·  Qty: ${item.qty}',
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: Colors.grey.shade600)),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(children: [
+                Icon(Icons.info_outline_rounded,
+                    size: 14, color: Colors.orange.shade700),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'This quotation is pending review. '
+                        'Contact your account manager to follow up.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.orange.shade700, fontSize: 11),
+                  ),
+                ),
+              ]),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final status = item.status;
-
     return Container(
       width: _totalTableWidth,
-      padding: const EdgeInsets.symmetric(
-          horizontal: _rowHPad, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: _rowHPad, vertical: 16),
       decoration: BoxDecoration(
-        color: isEven
-            ? AppColors.surfaceLight
-            : const Color(0xFFF7F8FA),
+        color: isEven ? AppColors.surfaceLight : const Color(0xFFF7F8FA),
         border: isLast
             ? null
             : Border(bottom: BorderSide(color: Colors.grey.shade100)),
       ),
-      child: Row(
-        children: [
-          // Quotation #
-          SizedBox(
-            width: _colQuotation,
+      child: Row(children: [
+        SizedBox(width: _colQuotation,
             child: Text(item.quotationNumber,
                 style: AppTextStyles.bodySmall.copyWith(
                     fontWeight: FontWeight.w800,
-                    color: AppColors.secondaryLight)),
-          ),
-
-          // Date
-          SizedBox(
-            width: _colDate,
+                    color: AppColors.secondaryLight))),
+        SizedBox(width: _colDate,
             child: Text(_shortDate(item.date),
                 style: AppTextStyles.bodySmall
-                    .copyWith(color: Colors.grey.shade600)),
-          ),
-
-          // Product / Service
-          SizedBox(
-            width: _colProduct,
+                    .copyWith(color: Colors.grey.shade600))),
+        SizedBox(width: _colProduct,
             child: Text(item.productService,
                 style: AppTextStyles.bodySmall.copyWith(
                     fontWeight: FontWeight.w600,
                     color: AppColors.onBackgroundLight),
-                overflow: TextOverflow.ellipsis),
-          ),
-
-          // Qty
-          SizedBox(
-            width: _colQty,
+                overflow: TextOverflow.ellipsis)),
+        SizedBox(width: _colQty,
             child: Text(item.qty,
                 style: AppTextStyles.bodySmall
-                    .copyWith(color: Colors.grey.shade600)),
-          ),
-
-          // Quoted price
-          SizedBox(
-            width: _colPrice,
+                    .copyWith(color: Colors.grey.shade600))),
+        SizedBox(width: _colPrice,
             child: Text(item.formattedPrice,
                 style: AppTextStyles.bodySmall.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: AppColors.onBackgroundLight)),
-          ),
-
-          // Status chip
-          SizedBox(
-            width: _colStatus,
+                    color: AppColors.onBackgroundLight))),
+        SizedBox(width: _colStatus,
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: status.bgColor,
                 borderRadius: BorderRadius.circular(20),
@@ -588,137 +697,433 @@ class _TableRow extends StatelessWidget {
                       color: status.color,
                       fontWeight: FontWeight.w700,
                       fontSize: 11)),
-            ),
-          ),
-
-          // Action button
-          SizedBox(
-            width: _colAction,
-            child: GestureDetector(
-              onTap: () => status == QuotationStatus.rejected
-                  ? _showRejectionReason(context)
-                  : _showDetails(context),
+            )),
+        SizedBox(width: _colAction,
+            child: status == QuotationStatus.approved
+            // ── Approved: View Invoice + Download ─────────────────────
+                ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _QHActionBtn(
+                  label: 'View Invoice',
+                  icon: Icons.visibility_outlined,
+                  onTap: () => _showDetails(context),
+                ),
+                const SizedBox(height: 5),
+                _QHActionBtn(
+                  label: 'Download',
+                  icon: Icons.download_rounded,
+                  onTap: () => InvoiceService.downloadInvoiceWithUI(
+                    context:   context,
+                    invoiceId: item.id,
+                  ),
+                  isSecondary: true,
+                ),
+              ],
+            )
+            // ── Rejected: View Reason ──────────────────────────────────
+                : status == QuotationStatus.rejected
+                ? GestureDetector(
+              onTap: () => _showRejectionReason(context),
               child: Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: status == QuotationStatus.rejected
-                      ? Colors.red.shade50
-                      : status == QuotationStatus.pending
-                      ? Colors.orange.shade50
-                      : AppColors.primaryLight.withOpacity(0.15),
+                  color: Colors.red.shade50,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  status == QuotationStatus.rejected
-                      ? 'View Reason'
-                      : status == QuotationStatus.pending
-                      ? 'Follow Up'
-                      : 'View Details',
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: status == QuotationStatus.rejected
-                        ? Colors.red.shade600
-                        : status == QuotationStatus.pending
-                        ? Colors.orange.shade700
-                        : AppColors.secondaryLight,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                  ),
-                ),
+                child: Text('View Reason',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.red.shade600,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11)),
               ),
-            ),
-          ),
-        ],
-      ),
+            )
+            // ── Pending: Follow Up ─────────────────────────────────────
+                : GestureDetector(
+              onTap: () => _showFollowUp(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text('Follow Up',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.orange.shade700,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11)),
+              ),
+            )),
+      ]),
     );
   }
 }
 
+
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Detail bottom sheet
+// Quotation action button — used in table rows for approved items
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _DetailSheet extends StatelessWidget {
-  final QuotationHistoryItem item;
-  const _DetailSheet({required this.item});
+class _QHActionBtn extends StatelessWidget {
+  final String     label;
+  final IconData   icon;
+  final VoidCallback onTap;
+  final bool       isSecondary;
+
+  const _QHActionBtn({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.isSecondary = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSecondary
+              ? AppColors.backgroundLight
+              : AppColors.primaryLight.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(7),
+          border: isSecondary
+              ? Border.all(color: Colors.grey.shade300)
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                size: 11,
+                color: isSecondary
+                    ? Colors.grey.shade600
+                    : AppColors.secondaryLight),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: isSecondary
+                    ? Colors.grey.shade600
+                    : AppColors.secondaryLight,
+                fontWeight: FontWeight.w700,
+                fontSize: 10,
               ),
             ),
-          ),
-          const SizedBox(height: 16),
-
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.request_quote_outlined,
-                    color: AppColors.secondaryLight, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(item.quotationNumber,
-                        style: AppTextStyles.h3.copyWith(
-                            fontWeight: FontWeight.w800)),
-                    Text(item.productService,
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: Colors.grey.shade500)),
-                  ],
-                ),
-              ),
-              _StatusBadge(status: item.status),
-            ],
-          ),
-          const SizedBox(height: 20),
-          const Divider(height: 1, color: Color(0xFFF0F0F0)),
-          const SizedBox(height: 16),
-
-          _DetailRow('Date',         _longDate(item.date)),
-          _DetailRow('Quantity',     item.qty),
-          _DetailRow('Quoted Price', item.formattedPrice),
-          _DetailRow('Submitted By', item.submittedBy),
-          if (item.rejectionReason != null)
-            _DetailRow('Rejection Reason', item.rejectionReason!,
-                valueColor: Colors.red.shade700),
-          const SizedBox(height: 20),
-
-          SizedBox(
-            width: double.infinity,
-            child: CustomButton(
-              text: 'Close',
-              backgroundColor: AppColors.primaryLight,
-              textColor: AppColors.onPrimaryLight,
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Summary card — uses real API data from VM
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SummaryCard extends StatelessWidget {
+  final QuotationHistorySummary summary;
+  const _SummaryCard({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 10),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.bar_chart_rounded,
+                  size: 15, color: AppColors.secondaryLight),
+            ),
+            const SizedBox(width: 8),
+            Text('Summary Stats',
+                style: AppTextStyles.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.onBackgroundLight)),
+          ]),
+        ),
+        Row(children: [
+          Expanded(child: _StatCard(
+              label: 'Total', value: '${summary.total}',
+              icon: Icons.format_list_numbered_rounded,
+              color: Colors.blue.shade700, bgColor: Colors.blue.shade50)),
+          const SizedBox(width: 12),
+          Expanded(child: _StatCard(
+              label: 'Approved', value: '${summary.approved}',
+              icon: Icons.check_circle_outline_rounded,
+              color: Colors.green.shade700, bgColor: Colors.green.shade50)),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: _StatCard(
+              label: 'Rejected', value: '${summary.rejected}',
+              icon: Icons.cancel_outlined,
+              color: Colors.red.shade600, bgColor: Colors.red.shade50)),
+          const SizedBox(width: 12),
+          Expanded(child: _StatCard(
+              label: 'Pending', value: '${summary.pending}',
+              icon: Icons.hourglass_top_rounded,
+              color: Colors.orange.shade700, bgColor: Colors.orange.shade50)),
+        ]),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          decoration: BoxDecoration(
+            color: AppColors.secondaryLight,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(color: AppColors.secondaryLight.withOpacity(0.25),
+                  blurRadius: 10, offset: const Offset(0, 4)),
+            ],
+          ),
+          child: Row(children: [
+            Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: AppColors.primaryLight.withOpacity(0.15),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.attach_money_rounded,
+                  size: 20, color: AppColors.primaryLight),
+            ),
+            const SizedBox(width: 14),
+            Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Total Quoted Value',
+                    style: AppTextStyles.bodySmall.copyWith(color: Colors.white60)),
+                const SizedBox(height: 2),
+                Text('SAR ${_fmt(summary.totalQuotedValue)}',
+                    style: AppTextStyles.h3.copyWith(
+                        color: AppColors.primaryLight,
+                        fontWeight: FontWeight.w800, fontSize: 20)),
+              ],
+            )),
+          ]),
+        ),
+        const SizedBox(height: 12),
+        _ExportButton(summary: summary),
+        const SizedBox(height: 30),
+      ],
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final String label, value;
+  final IconData icon;
+  final Color color, bgColor;
+  const _StatCard({required this.label, required this.value,
+    required this.icon, required this.color, required this.bgColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05),
+              blurRadius: 8, offset: const Offset(0, 2)),
+        ],
+      ),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(
+              color: bgColor, borderRadius: BorderRadius.circular(10)),
+          child: Icon(icon, size: 18, color: color),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(value, style: AppTextStyles.h3.copyWith(
+                color: color, fontWeight: FontWeight.w800, fontSize: 22)),
+            Text(label, style: AppTextStyles.bodySmall
+                .copyWith(color: Colors.grey.shade500)),
+          ],
+        )),
+      ]),
+    );
+  }
+}
+
+class _ExportButton extends StatelessWidget {
+  final QuotationHistorySummary summary;
+  const _ExportButton({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<QuotationHistoryViewModel>();
+    return SizedBox(
+      width: double.infinity,
+      child: CustomButton(
+        text: 'Export Report',
+        isLoading: vm.isExporting,
+        backgroundColor: AppColors.primaryLight,
+        textColor: AppColors.onPrimaryLight,
+        onPressed: vm.isExporting ? () {} : () async {
+          await vm.exportReport();
+          if (!context.mounted) return;
+          if (vm.exportError != null) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(vm.exportError!),
+              backgroundColor: Colors.red.shade600,
+              behavior: SnackBarBehavior.floating,
+            ));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('Report exported successfully'),
+              backgroundColor: AppColors.secondaryLight,
+              behavior: SnackBarBehavior.floating,
+            ));
+          }
+        },
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Filter chip
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _FilterChip extends StatelessWidget {
+  final IconData icon;
+  final String   label;
+  final bool     active;
+  final VoidCallback onTap;
+  const _FilterChip({required this.icon, required this.label,
+    required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          color: active
+              ? AppColors.primaryLight.withOpacity(0.12)
+              : AppColors.backgroundLight,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: active ? AppColors.primaryLight : Colors.grey.shade300,
+            width: active ? 1.5 : 1,
+          ),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 13,
+              color: active ? AppColors.secondaryLight : Colors.grey.shade500),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(label,
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: active
+                        ? AppColors.onBackgroundLight
+                        : Colors.grey.shade500,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.normal,
+                    fontSize: 11),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Status dropdown
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatusDropdown extends StatelessWidget {
+  final QuotationStatus? value;
+  final ValueChanged<QuotationStatus?> onChanged;
+  const _StatusDropdown({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 40,
+      child: DropdownButtonFormField<QuotationStatus?>(
+        value: value,
+        isExpanded: true,
+        style: AppTextStyles.bodySmall
+            .copyWith(color: Colors.black, fontSize: 12),
+        dropdownColor: Colors.white,
+        decoration: InputDecoration(
+          hintText: 'Status',
+          hintStyle: AppTextStyles.bodySmall
+              .copyWith(color: Colors.grey.shade400, fontSize: 12),
+          isDense: true,
+          contentPadding:
+          const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide:
+            const BorderSide(color: AppColors.primaryLight, width: 1.5),
+          ),
+        ),
+        items: [
+          DropdownMenuItem(
+            value: null,
+            child: Text('All Status',
+                style: AppTextStyles.bodySmall.copyWith(fontSize: 11)),
+          ),
+          ...QuotationStatus.values.map((s) => DropdownMenuItem(
+            value: s,
+            child: Text(s.label,
+                style: AppTextStyles.bodySmall.copyWith(fontSize: 11)),
+          )),
+        ],
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Status badge
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatusBadge extends StatelessWidget {
+  final QuotationStatus status;
+  const _StatusBadge({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+          color: status.bgColor, borderRadius: BorderRadius.circular(20)),
+      child: Text(status.label,
+          style: AppTextStyles.bodySmall
+              .copyWith(color: status.color, fontWeight: FontWeight.w700)),
+    );
+  }
+}
 class _DetailRow extends StatelessWidget {
   final String label;
   final String value;
@@ -733,10 +1138,11 @@ class _DetailRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 130,
+            width: 140,
             child: Text(label,
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: Colors.grey.shade500)),
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: Colors.grey.shade500,
+                    fontWeight: FontWeight.w600)),
           ),
           Expanded(
             child: Text(value,
@@ -746,435 +1152,6 @@ class _DetailRow extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Summary stats — individual cards
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _SummaryCard extends StatelessWidget {
-  final QuotationHistorySummary summary;
-  const _SummaryCard({required this.summary});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Section label
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 10),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.bar_chart_rounded,
-                    size: 15, color: AppColors.secondaryLight),
-              ),
-              const SizedBox(width: 8),
-              Text('Summary Stats',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.onBackgroundLight)),
-            ],
-          ),
-        ),
-
-        // 2×2 grid
-        Row(
-          children: [
-            Expanded(
-              child: _StatCard(
-                label: 'Total',
-                value: '${summary.total}',
-                icon: Icons.format_list_numbered_rounded,
-                color: Colors.blue.shade700,
-                bgColor: Colors.blue.shade50,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _StatCard(
-                label: 'Approved',
-                value: '${summary.approved}',
-                icon: Icons.check_circle_outline_rounded,
-                color: Colors.green.shade700,
-                bgColor: Colors.green.shade50,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _StatCard(
-                label: 'Rejected',
-                value: '${summary.rejected}',
-                icon: Icons.cancel_outlined,
-                color: Colors.red.shade600,
-                bgColor: Colors.red.shade50,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _StatCard(
-                label: 'Pending',
-                value: '${summary.pending}',
-                icon: Icons.hourglass_top_rounded,
-                color: Colors.orange.shade700,
-                bgColor: Colors.orange.shade50,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // Total Quoted Value — full-width dark card
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          decoration: BoxDecoration(
-            color: AppColors.secondaryLight,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.secondaryLight.withOpacity(0.25),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.attach_money_rounded,
-                    size: 20, color: AppColors.primaryLight),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Total Quoted Value',
-                        style: AppTextStyles.bodySmall.copyWith(
-                            color: Colors.white60)),
-                    const SizedBox(height: 2),
-                    Text('SAR ${_fmt(summary.totalQuotedValue)}',
-                        style: AppTextStyles.h3.copyWith(
-                          color: AppColors.primaryLight,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 20,
-                        )),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        _ExportButton(summary: summary),
-        const SizedBox(height: 30),
-
-      ],
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color color;
-  final Color bgColor;
-
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.color,
-    required this.bgColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(9),
-            decoration: BoxDecoration(
-              color: bgColor,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, size: 18, color: color),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(value,
-                    style: AppTextStyles.h3.copyWith(
-                      color: color,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 22,
-                    )),
-                Text(label,
-                    style: AppTextStyles.bodySmall
-                        .copyWith(color: Colors.grey.shade500)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Export button (reads vm from context)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _ExportButton extends StatelessWidget {
-  const _ExportButton({required this.summary});
-  final QuotationHistorySummary summary;
-
-  @override
-  Widget build(BuildContext context) {
-    final vm = context.watch<QuotationHistoryViewModel>();
-
-    return SizedBox(
-      width: double.infinity,
-      child: CustomButton(
-        text: 'Export Report',
-        isLoading: vm.isExporting,
-        backgroundColor: AppColors.primaryLight,
-        textColor: AppColors.onPrimaryLight,
-        onPressed: vm.isExporting
-            ? () {}
-            : () async {
-          await vm.exportReport();
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Report exported successfully'),
-            backgroundColor: AppColors.secondaryLight,
-            behavior: SnackBarBehavior.floating,
-          ));
-        },
-      ),
-    );
-  }
-}
-
-
-
-class _FilterChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-  const _FilterChip({
-    required this.icon,
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-        decoration: BoxDecoration(
-          color: active
-              ? AppColors.primaryLight.withOpacity(0.12)
-              : AppColors.backgroundLight,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-            color: active
-                ? AppColors.primaryLight
-                : Colors.grey.shade300,
-            width: active ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                size: 13,
-                color: active
-                    ? AppColors.secondaryLight
-                    : Colors.grey.shade500),
-            const SizedBox(width: 5),
-            Expanded(
-              child: Text(label,
-                  style: AppTextStyles.bodySmall.copyWith(
-                      color: active
-                          ? AppColors.onBackgroundLight
-                          : Colors.grey.shade500,
-                      fontWeight: active
-                          ? FontWeight.w700
-                          : FontWeight.normal,
-                      fontSize: 11),
-                  overflow: TextOverflow.ellipsis),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusDropdown extends StatelessWidget {
-  final QuotationStatus? value;
-  final ValueChanged<QuotationStatus?> onChanged;
-  const _StatusDropdown({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 40,
-      child: DropdownButtonFormField<QuotationStatus?>(
-        value: value,
-        isExpanded: true,
-        style: AppTextStyles.bodySmall.copyWith(color: Colors.black),
-        decoration: InputDecoration(
-          hintText: 'Status',
-          hintStyle: AppTextStyles.bodySmall
-              .copyWith(color: Colors.grey.shade400),
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(
-              horizontal: 10, vertical: 10),
-          border:
-          OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(
-                color: AppColors.primaryLight, width: 1.5),
-          ),
-        ),
-        items: [
-          DropdownMenuItem(
-            value: null,
-            child: Text('All Status',
-                style:
-                AppTextStyles.bodySmall.copyWith(fontSize: 11)),
-          ),
-          ...QuotationStatus.values.map((s) => DropdownMenuItem(
-            value: s,
-            child: Text(s.label,
-                style: AppTextStyles.bodySmall
-                    .copyWith(fontSize: 11)),
-          )),
-        ],
-        onChanged: onChanged,
-      ),
-    );
-  }
-}
-
-class _SubmittedByDropdown extends StatelessWidget {
-  final List<String> options;
-  final String? value;
-  final ValueChanged<String?> onChanged;
-  const _SubmittedByDropdown({
-    required this.options,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 40,
-      child: DropdownButtonFormField<String?>(
-        value: value,
-        isExpanded: true,
-        style: AppTextStyles.bodySmall.copyWith(color: Colors.black),
-        decoration: InputDecoration(
-          hintText: 'Submitted By',
-          hintStyle: AppTextStyles.bodySmall
-              .copyWith(color: Colors.grey.shade400),
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(
-              horizontal: 10, vertical: 10),
-          border:
-          OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(
-                color: AppColors.primaryLight, width: 1.5),
-          ),
-        ),
-        items: [
-          DropdownMenuItem(
-            value: null,
-            child: Text('All',
-                style:
-                AppTextStyles.bodySmall.copyWith(fontSize: 11)),
-          ),
-          ...options.map((o) => DropdownMenuItem(
-            value: o,
-            child: Text(o,
-                style: AppTextStyles.bodySmall
-                    .copyWith(fontSize: 11),
-                overflow: TextOverflow.ellipsis),
-          )),
-        ],
-        onChanged: onChanged,
-      ),
-    );
-  }
-}
-
-class _StatusBadge extends StatelessWidget {
-  final QuotationStatus status;
-  const _StatusBadge({required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: status.bgColor,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(status.label,
-          style: AppTextStyles.bodySmall.copyWith(
-              color: status.color, fontWeight: FontWeight.w700)),
     );
   }
 }

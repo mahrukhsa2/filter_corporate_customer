@@ -18,7 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
-
+import 'views/Login/registration_view_model.dart';
 import 'l10n/app_localizations.dart';
 import 'services/session_service.dart';
 import 'utils/app_theme.dart';
@@ -53,14 +53,12 @@ void main() async {
     systemNavigationBarDividerColor: Colors.transparent,
   ));
 
-  final isOnboardDone = await SessionService.isOnboardDone();
   final isLoggedIn = await SessionService.isLoggedIn();
   final savedLocale = await SessionService.getLocale();
 
   runApp(
     FilterCorporateApp(
       initialLocale: Locale(savedLocale),
-      showOnboarding: !isOnboardDone,
       isLoggedIn: isLoggedIn,
     ),
   );
@@ -68,13 +66,11 @@ void main() async {
 
 class FilterCorporateApp extends StatelessWidget {
   final Locale initialLocale;
-  final bool showOnboarding;
   final bool isLoggedIn;
 
   const FilterCorporateApp({
     super.key,
     required this.initialLocale,
-    required this.showOnboarding,
     required this.isLoggedIn,
   });
 
@@ -97,6 +93,8 @@ class FilterCorporateApp extends StatelessWidget {
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: settings.themeMode,
+
+
 
             // ── Localisation ───────────────────────────────────────────────
             locale: settings.locale,
@@ -123,7 +121,11 @@ class FilterCorporateApp extends StatelessWidget {
                   break;
 
                 case '/register':
-                  page = const OnboardingView();
+                case '/onboarding':
+                  page = ChangeNotifierProvider(
+                    create: (_) => RegistrationViewModel(),
+                    child: const OnboardingView(),
+                  );
                   break;
 
                 case '/home':
@@ -145,37 +147,28 @@ class FilterCorporateApp extends StatelessWidget {
                   break;
 
 
-
-                case '/reports/quotation-history':
-                  page = const QuotationHistoryScreen();
-                  break;
-
-                case '/reports/monthly-billing':
-                  page = const MonthlyBillingReportScreen();
-                  break;
-
                 case '/reports/wallet-transactions':
                   page = const WalletTransactionScreen();
                   break;
 
-                 case '/reports/savings':
+                case '/reports/savings':
                   page = const SavingsDiscountScreen();
                   break;
 
-                 case '/reports/vehicle-usage':
+                case '/reports/vehicle-usage':
                   page = const VehicleUsageScreen();
                   break;
 
-                  case '/reports/payment-history':
-                    page = const PaymentHistoryReportScreen();
-                    break;
+                case '/reports/payment-history':
+                  page = const PaymentHistoryReportScreen();
+                  break;
 
                 case '/reports/booking-service-history':
                   page = const BookingServiceReportScreen();
                   break;
 
 
-              case '/pos':
+                case '/pos':
                   page = const PosShell();
                   break;
 
@@ -204,20 +197,29 @@ class FilterCorporateApp extends StatelessWidget {
                   page = const VehicleScreen();
                   break;
 
-                case '/monthly-billing':
-                  page = const MonthlyBillingScreen();
-                  break;
 
                 case '/profile':
                   page = const ProfileScreen();
                   break;
 
-                case '/make_payment':
+                case '/make-payment':
                   page = const MakePaymentScreen();
                   break;
 
                 case '/reports-landing':
                   page = const ReportsScreen();
+                  break;
+
+                case '/reports/quotation-history':
+                  page = const QuotationHistoryScreen();
+                  break;
+
+                case '/reports/monthly-billing':
+                  page = const MonthlyBillingReportScreen();
+                  break;
+
+                case '/monthly-billing':
+                  page = const MonthlyBillingScreen();
                   break;
 
                 case '/manage-branches':
@@ -244,7 +246,6 @@ class FilterCorporateApp extends StatelessWidget {
   /// Decides the very first screen shown based on persisted session state.
   Widget _resolveHome() {
     if (isLoggedIn) return const HomeScreen();
-    if (showOnboarding) return const OnboardingView();
     return const LoginScreen();
   }
 }

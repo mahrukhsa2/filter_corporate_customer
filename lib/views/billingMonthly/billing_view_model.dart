@@ -1,105 +1,111 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-
+import '../../data/network/api_response.dart';
+import '../../data/repositories/BillingRepository.dart';
 import '../../models/billing_model.dart';
+import '../../widgets/app_alert.dart';
 
-enum BillingLoadStatus { idle, loading, loaded, error }
-enum PaymentActionStatus { idle, processing, success, error }
+// ─────────────────────────────────────────────────────────────────────────────
+// lib/views/Billing/billing_view_model.dart
+//
+// Simplified to show ONLY current month billing
+// API: GET /corporate/billing/monthly
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum BillingLoadStatus    { idle, loading, loaded, error }
+enum PaymentActionStatus  { idle, processing, success, error }
 
 class MonthlyBillingViewModel extends ChangeNotifier {
-  // ── State ─────────────────────────────────────────────────────────────────
-  BillingLoadStatus _loadStatus = BillingLoadStatus.idle;
-  PaymentActionStatus _paymentStatus = PaymentActionStatus.idle;
-  String _errorMessage = '';
+
+  BillingLoadStatus      _loadStatus    = BillingLoadStatus.idle;
+  PaymentActionStatus    _paymentStatus = PaymentActionStatus.idle;
+  String                 _errorMessage  = '';
+  ApiErrorType           _errorType     = ApiErrorType.none;
   MonthlyBillingSummary? _summary;
 
-  // ── Available months for navigation ───────────────────────────────────────
-  final List<String> _availableMonths = [
-    'February 2026',
-    'January 2026',
-    'December 2025',
-    'November 2025',
-  ];
-  int _selectedMonthIndex = 0;
-
-  // ── Getters ───────────────────────────────────────────────────────────────
-  BillingLoadStatus get loadStatus => _loadStatus;
-  PaymentActionStatus get paymentStatus => _paymentStatus;
-  String get errorMessage => _errorMessage;
-  MonthlyBillingSummary? get summary => _summary;
-  List<String> get availableMonths => _availableMonths;
-  int get selectedMonthIndex => _selectedMonthIndex;
-  String get selectedMonth => _availableMonths[_selectedMonthIndex];
-  bool get isLoading => _loadStatus == BillingLoadStatus.loading;
+  BillingLoadStatus      get loadStatus         => _loadStatus;
+  PaymentActionStatus    get paymentStatus      => _paymentStatus;
+  String                 get errorMessage       => _errorMessage;
+  ApiErrorType           get errorType          => _errorType;
+  MonthlyBillingSummary? get summary            => _summary;
+  bool get isLoading    => _loadStatus    == BillingLoadStatus.loading;
+  bool get hasError     => _loadStatus    == BillingLoadStatus.error;
   bool get isProcessing => _paymentStatus == PaymentActionStatus.processing;
-  bool get hasPrev => _selectedMonthIndex < _availableMonths.length - 1;
-  bool get hasNext => _selectedMonthIndex > 0;
 
   MonthlyBillingViewModel() {
+    debugPrint('[MonthlyBillingViewModel] created');
     _loadBilling();
   }
 
-  // ── Load billing data ─────────────────────────────────────────────────────
-  Future<void> _loadBilling() async {
+  // ── Load current month billing ──────────── GET /corporate/billing/monthly
+
+  Future<void> _loadBilling({BuildContext? context}) async {
+    debugPrint('[MonthlyBillingViewModel] _loadBilling START');
+
     _loadStatus = BillingLoadStatus.loading;
-    _summary = null;
+    _summary    = null;
     notifyListeners();
 
-    await Future.delayed(const Duration(milliseconds: 700));
+    final result = await BillingRepository.fetchMonthlyBilling();
 
-    // ── Dummy data per selected month – replace with real API call ─────────
-    _summary = _dummySummaryFor(_selectedMonthIndex);
+    if (result.success && result.data != null) {
+      _summary    = result.data;
+      _errorMessage = '';
+      _errorType    = ApiErrorType.none;
+      _loadStatus   = BillingLoadStatus.loaded;
+      debugPrint('[MonthlyBillingViewModel] loaded from API: '
+          'month=${_summary!.monthLabel} '
+          'totalDue=${_summary!.totalDue} '
+          'invoices=${_summary!.invoices.length}');
+    } else {
+      debugPrint('[MonthlyBillingViewModel] API failed: '
+          'errorType=${result.errorType} msg=${result.message}');
+      _errorMessage = result.message ?? 'Failed to load billing data.';
+      _errorType    = result.errorType;
+      _loadStatus   = BillingLoadStatus.error;
 
-    _loadStatus = BillingLoadStatus.loaded;
+      if (context != null && context.mounted) {
+        await AppAlert.apiError(
+          context,
+          errorType: result.errorType,
+          message:   result.message,
+          onRetry: result.errorType == ApiErrorType.noInternet ||
+              result.errorType == ApiErrorType.timeout
+              ? () => _loadBilling(context: context)
+              : null,
+        );
+      }
+    }
+
     notifyListeners();
+    debugPrint('[MonthlyBillingViewModel] _loadBilling END status=$_loadStatus');
   }
 
-  Future<void> refresh() => _loadBilling();
-
-  void goToPrevMonth() {
-    if (!hasPrev) return;
-    _selectedMonthIndex++;
-    _loadBilling();
-  }
-
-  void goToNextMonth() {
-    if (!hasNext) return;
-    _selectedMonthIndex--;
-    _loadBilling();
-  }
-
-  void selectMonth(int index) {
-    if (index == _selectedMonthIndex) return;
-    _selectedMonthIndex = index;
-    _loadBilling();
+  Future<void> refresh({BuildContext? context}) {
+    debugPrint('[MonthlyBillingViewModel] refresh');
+    return _loadBilling(context: context);
   }
 
   // ── Payment actions ───────────────────────────────────────────────────────
+  // TODO: wire to real endpoints when available:
+  //   POST /corporate/billing/pay { method: "wallet" | "bank" | "partial", amount? }
 
-  Future<bool> payWithWallet() async {
-    return _processPayment('wallet_full');
-  }
-
-  Future<bool> payWithBank() async {
-    return _processPayment('bank_full');
-  }
-
-  Future<bool> payPartial(double amount) async {
-    return _processPayment('partial', amount: amount);
-  }
+  Future<bool> payWithWallet()           => _processPayment('wallet');
+  Future<bool> payWithBank()             => _processPayment('bank');
+  Future<bool> payPartial(double amount) => _processPayment('partial', amount: amount);
 
   Future<bool> _processPayment(String method, {double? amount}) async {
+    debugPrint('[MonthlyBillingViewModel] _processPayment method=$method amount=$amount');
     _paymentStatus = PaymentActionStatus.processing;
-    _errorMessage = '';
+    _errorMessage  = '';
     notifyListeners();
 
     await Future.delayed(const Duration(milliseconds: 1300));
 
-    // ── Dummy success – replace with real payment API call ─────────────────
     _paymentStatus = PaymentActionStatus.success;
     notifyListeners();
 
-    // Reload billing to reflect updated status
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(milliseconds: 400));
     await _loadBilling();
 
     _paymentStatus = PaymentActionStatus.idle;
@@ -109,115 +115,7 @@ class MonthlyBillingViewModel extends ChangeNotifier {
 
   void resetPaymentStatus() {
     _paymentStatus = PaymentActionStatus.idle;
-    _errorMessage = '';
+    _errorMessage  = '';
     notifyListeners();
-  }
-
-  // ── Dummy data factory ────────────────────────────────────────────────────
-  static MonthlyBillingSummary _dummySummaryFor(int monthIndex) {
-    switch (monthIndex) {
-      case 0: // February 2026
-        return MonthlyBillingSummary(
-          monthLabel: 'February 2026',
-          totalDue: 48750,
-          dueDate: DateTime(2026, 3, 15),
-          walletBalance: 12450,
-          status: BillingPaymentStatus.pending,
-          invoices: [
-            InvoiceModel(
-              invoiceNumber: 'INV-7845',
-              date: DateTime(2026, 2, 12),
-              vehiclePlate: 'ABC-123',
-              department: 'Oil Change',
-              amount: 285,
-              status: InvoiceStatus.paid,
-            ),
-            InvoiceModel(
-              invoiceNumber: 'INV-7846',
-              date: DateTime(2026, 2, 20),
-              vehiclePlate: 'XYZ-789',
-              department: 'Engine Repair',
-              amount: 12450,
-              status: InvoiceStatus.pending,
-            ),
-            InvoiceModel(
-              invoiceNumber: 'INV-7847',
-              date: DateTime(2026, 2, 22),
-              vehiclePlate: 'ABC-123',
-              department: 'Brake Service',
-              amount: 18500,
-              status: InvoiceStatus.pending,
-            ),
-            InvoiceModel(
-              invoiceNumber: 'INV-7848',
-              date: DateTime(2026, 2, 25),
-              vehiclePlate: 'DEF-456',
-              department: 'Tire Rotation',
-              amount: 17515,
-              status: InvoiceStatus.pending,
-            ),
-          ],
-        );
-      case 1: // January 2026
-        return MonthlyBillingSummary(
-          monthLabel: 'January 2026',
-          totalDue: 32100,
-          dueDate: DateTime(2026, 2, 15),
-          walletBalance: 12450,
-          status: BillingPaymentStatus.paid,
-          invoices: [
-            InvoiceModel(
-              invoiceNumber: 'INV-7801',
-              date: DateTime(2026, 1, 5),
-              vehiclePlate: 'ABC-123',
-              department: 'Full Inspection',
-              amount: 1800,
-              status: InvoiceStatus.paid,
-            ),
-            InvoiceModel(
-              invoiceNumber: 'INV-7802',
-              date: DateTime(2026, 1, 18),
-              vehiclePlate: 'XYZ-789',
-              department: 'AC Service',
-              amount: 12300,
-              status: InvoiceStatus.paid,
-            ),
-            InvoiceModel(
-              invoiceNumber: 'INV-7803',
-              date: DateTime(2026, 1, 29),
-              vehiclePlate: 'DEF-456',
-              department: 'Oil Change',
-              amount: 18000,
-              status: InvoiceStatus.paid,
-            ),
-          ],
-        );
-      default: // Older months
-        return MonthlyBillingSummary(
-          monthLabel: monthIndex == 2 ? 'December 2025' : 'November 2025',
-          totalDue: 22500,
-          dueDate: DateTime(2026, monthIndex == 2 ? 1 : 12, 15),
-          walletBalance: 12450,
-          status: BillingPaymentStatus.paid,
-          invoices: [
-            InvoiceModel(
-              invoiceNumber: 'INV-${7700 + monthIndex}',
-              date: DateTime(2025, monthIndex == 2 ? 12 : 11, 10),
-              vehiclePlate: 'ABC-123',
-              department: 'Car Wash',
-              amount: 9500,
-              status: InvoiceStatus.paid,
-            ),
-            InvoiceModel(
-              invoiceNumber: 'INV-${7701 + monthIndex}',
-              date: DateTime(2025, monthIndex == 2 ? 12 : 11, 22),
-              vehiclePlate: 'XYZ-789',
-              department: 'Battery',
-              amount: 13000,
-              status: InvoiceStatus.paid,
-            ),
-          ],
-        );
-    }
   }
 }

@@ -43,15 +43,63 @@ class _BillingBody extends StatelessWidget {
           Expanded(
             child: vm.isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primaryLight))
+                child: CircularProgressIndicator(
+                    color: AppColors.primaryLight))
+                : vm.hasError
+            // Network / timeout / server error — summary is null
+                ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.wifi_off_rounded,
+                          size: 60, color: Colors.red.shade300),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Could not load billing data',
+                      style: AppTextStyles.h3.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.onBackgroundLight,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      vm.errorMessage,
+                      textAlign: TextAlign.center,
+                      style: AppTextStyles.bodyMedium
+                          .copyWith(color: Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: () => vm.refresh(context: context),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Retry'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryLight,
+                        foregroundColor: AppColors.onPrimaryLight,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
                 : RefreshIndicator(
-                    color: AppColors.primaryLight,
-                    onRefresh: vm.refresh,
-                    child: isWide
-                        ? _WideLayout(vm: vm)
-                        : _NarrowLayout(vm: vm),
-                  ),
+              color: AppColors.primaryLight,
+              onRefresh: () => vm.refresh(context: context),
+              child: isWide
+                  ? _WideLayout(vm: vm)
+                  : _NarrowLayout(vm: vm),
+            ),
           ),
         ],
       ),
@@ -73,13 +121,11 @@ class _NarrowLayout extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 40),
       children: [
-        _MonthNavigator(vm: vm),
-        const SizedBox(height: 16),
         _OverviewCard(summary: s),
         const SizedBox(height: 16),
         _StatsRow(summary: s),
         const SizedBox(height: 16),
-        _InvoiceList(summary: s),
+        _InvoiceTable(summary: s),
         const SizedBox(height: 16),
         _PaymentActions(vm: vm, summary: s),
         const SizedBox(height: 16),
@@ -100,8 +146,6 @@ class _WideLayout extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
       child: Column(
         children: [
-          _MonthNavigator(vm: vm),
-          const SizedBox(height: 20),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -122,7 +166,7 @@ class _WideLayout extends StatelessWidget {
               // Right column - invoice table
               Expanded(
                 flex: 7,
-                child: _InvoiceList(summary: s),
+                child: _InvoiceTable(summary: s),
               ),
             ],
           ),
@@ -132,87 +176,6 @@ class _WideLayout extends StatelessWidget {
   }
 }
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Month navigator
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _MonthNavigator extends StatelessWidget {
-  final MonthlyBillingViewModel vm;
-  const _MonthNavigator({required this.vm});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          // Prev month arrow
-          _NavArrow(
-            icon: Icons.chevron_left_rounded,
-            enabled: vm.hasPrev,
-            onTap: vm.goToPrevMonth,
-          ),
-
-          // Month chips scroll
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                children: List.generate(vm.availableMonths.length, (i) {
-                  final isSelected = i == vm.selectedMonthIndex;
-                  return GestureDetector(
-                    onTap: () => vm.selectMonth(i),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? AppColors.primaryLight
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        vm.availableMonths[i],
-                        style: AppTextStyles.bodySmall.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: isSelected
-                              ? AppColors.onPrimaryLight
-                              : Colors.grey.shade600,
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ),
-            ),
-          ),
-
-          // Next month arrow
-          _NavArrow(
-            icon: Icons.chevron_right_rounded,
-            enabled: vm.hasNext,
-            onTap: vm.goToNextMonth,
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _NavArrow extends StatelessWidget {
   final IconData icon;
@@ -475,25 +438,13 @@ class _StatCard extends StatelessWidget {
 // Invoice breakdown table
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// USAGE: Replace `_InvoiceTable` with `_InvoiceList` everywhere in your file.
-// The constructor signature is identical:  _InvoiceList(summary: s)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _InvoiceList extends StatefulWidget {
+class _InvoiceTable extends StatelessWidget {
   final MonthlyBillingSummary summary;
-  const _InvoiceList({required this.summary});
-
-  @override
-  State<_InvoiceList> createState() => _InvoiceListState();
-}
-
-class _InvoiceListState extends State<_InvoiceList> {
-  int? _expandedIndex;
+  const _InvoiceTable({required this.summary});
 
   @override
   Widget build(BuildContext context) {
-    final invoices = widget.summary.invoices;
+    final isWide = MediaQuery.of(context).size.width > 720;
 
     return Container(
       decoration: BoxDecoration(
@@ -510,9 +461,9 @@ class _InvoiceListState extends State<_InvoiceList> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Card header ──────────────────────────────────────────────────
+          // Card header
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Row(
               children: [
                 Container(
@@ -525,23 +476,21 @@ class _InvoiceListState extends State<_InvoiceList> {
                       size: 16, color: AppColors.secondaryLight),
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'Invoice Breakdown',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.onBackgroundLight,
-                  ),
-                ),
+                Text('Invoice Breakdown',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.onBackgroundLight,
+                    )),
                 const Spacer(),
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
                     color: AppColors.primaryLight,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    '${invoices.length} invoices',
+                    '${summary.invoices.length} invoices',
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.onPrimaryLight,
                       fontWeight: FontWeight.w700,
@@ -552,45 +501,123 @@ class _InvoiceListState extends State<_InvoiceList> {
               ],
             ),
           ),
+          const SizedBox(height: 12),
           const Divider(height: 1, thickness: 1, color: Color(0xFFF0F0F0)),
 
-          // ── Invoice cards ─────────────────────────────────────────────────
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: invoices.length,
-            separatorBuilder: (_, __) =>
-            const Divider(height: 1, color: Color(0xFFF0F0F0)),
-            itemBuilder: (context, i) {
-              final inv = invoices[i];
-              final isExpanded = _expandedIndex == i;
-              return _InvoiceCard(
-                invoice: inv,
-                isExpanded: isExpanded,
-                onTap: () => setState(
-                      () => _expandedIndex = isExpanded ? null : i,
-                ),
-              );
-            },
-          ),
-
-          // ── Footer total ──────────────────────────────────────────────────
-          const Divider(height: 1, thickness: 1.5, color: Color(0xFFE0E0E0)),
-          Padding(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          // Table header row
+          Container(
+            color: AppColors.backgroundLight,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(
               children: [
-                Text(
-                  'Total',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.onBackgroundLight,
+                _TableHeader('Invoice #', flex: 3),
+                _TableHeader('Date', flex: 2),
+                if (isWide) _TableHeader('Vehicle', flex: 2),
+                _TableHeader('Department', flex: 3),
+                _TableHeader('Amount', flex: 2, align: TextAlign.right),
+                _TableHeader('Status', flex: 2, align: TextAlign.center),
+              ],
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFF0F0F0)),
+
+          // Invoice rows
+          ...summary.invoices.asMap().entries.map((entry) {
+            final i = entry.key;
+            final inv = entry.value;
+            final isEven = i % 2 == 0;
+            return Column(
+              children: [
+                Container(
+                  color: isEven ? Colors.transparent : AppColors.backgroundLight.withOpacity(0.5),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 13),
+                  child: Row(
+                    children: [
+                      // Invoice number
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          inv.invoiceNumber,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF1565C0),
+                          ),
+                        ),
+                      ),
+                      // Date
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          _shortDate(inv.date),
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ),
+                      // Vehicle (wide only)
+                      if (isWide)
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            inv.vehiclePlate,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.onBackgroundLight,
+                            ),
+                          ),
+                        ),
+                      // Department
+                      Expanded(
+                        flex: 3,
+                        child: Text(
+                          inv.department,
+                          style: AppTextStyles.bodySmall
+                              .copyWith(color: AppColors.onBackgroundLight),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      // Amount
+                      Expanded(
+                        flex: 2,
+                        child: Text(
+                          'SAR ${_fmt(inv.amount)}',
+                          textAlign: TextAlign.right,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.onBackgroundLight,
+                          ),
+                        ),
+                      ),
+                      // Status chip
+                      Expanded(
+                        flex: 2,
+                        child: Center(child: _InvoiceStatusChip(status: inv.status)),
+                      ),
+                    ],
                   ),
                 ),
-                const Spacer(),
+                if (entry.key < summary.invoices.length - 1)
+                  const Divider(height: 1, color: Color(0xFFF5F5F5)),
+              ],
+            );
+          }),
+
+          // Table footer – total row
+          const Divider(height: 1, thickness: 1.5, color: Color(0xFFE0E0E0)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text('Total',
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.onBackgroundLight,
+                      )),
+                ),
                 Text(
-                  'SAR ${_fmt(widget.summary.totalDue)}',
+                  'SAR ${_fmt(summary.totalDue)}',
                   style: AppTextStyles.bodyMedium.copyWith(
                     fontWeight: FontWeight.w800,
                     color: AppColors.secondaryLight,
@@ -605,265 +632,26 @@ class _InvoiceListState extends State<_InvoiceList> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Single expandable invoice card row
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _InvoiceCard extends StatelessWidget {
-  final InvoiceModel invoice;
-  final bool isExpanded;
-  final VoidCallback onTap;
-
-  const _InvoiceCard({
-    required this.invoice,
-    required this.isExpanded,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      color: isExpanded
-          ? AppColors.primaryLight.withOpacity(0.04)
-          : Colors.transparent,
-      child: Column(
-        children: [
-          // ── Collapsed summary row ────────────────────────────────────────
-          InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-              child: Row(
-                children: [
-                  // Colored status dot
-                  _StatusDot(status: invoice.status),
-                  const SizedBox(width: 10),
-
-                  // Invoice number + date stacked
-                  Expanded(
-                    flex: 4,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          invoice.invoiceNumber,
-                          style: AppTextStyles.bodySmall.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF1565C0),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          _shortDate(invoice.date),
-                          style: AppTextStyles.bodySmall.copyWith(
-                            fontSize: 11,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Department (truncated)
-                  Expanded(
-                    flex: 4,
-                    child: Text(
-                      invoice.department,
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.onBackgroundLight,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-
-                  // Amount + status chip stacked on the right
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        'SAR ${_fmt(invoice.amount)}',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.onBackgroundLight,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      _InvoiceStatusChip(status: invoice.status),
-                    ],
-                  ),
-                  const SizedBox(width: 8),
-
-                  // Animated chevron
-                  AnimatedRotation(
-                    turns: isExpanded ? 0.5 : 0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 18,
-                      color: Colors.grey.shade400,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // ── Expanded detail panel ────────────────────────────────────────
-          AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: _InvoiceDetailPanel(invoice: invoice),
-            crossFadeState: isExpanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 220),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Expanded detail panel – tapping a row reveals these extra fields
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _InvoiceDetailPanel extends StatelessWidget {
-  final InvoiceModel invoice;
-  const _InvoiceDetailPanel({required this.invoice});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.backgroundLight,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFEEEEEE)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              _DetailItem(
-                icon: Icons.calendar_today_outlined,
-                label: 'Full Date',
-                value: _formatDate(invoice.date),
-              ),
-              _DetailItem(
-                icon: Icons.directions_car_outlined,
-                label: 'Vehicle Plate',
-                value: invoice.vehiclePlate,
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _DetailItem(
-                icon: Icons.business_outlined,
-                label: 'Department',
-                value: invoice.department,
-              ),
-              _DetailItem(
-                icon: Icons.receipt_long_outlined,
-                label: 'Amount',
-                value: 'SAR ${_fmt(invoice.amount)}',
-                valueColor: AppColors.secondaryLight,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Detail item tile  (icon + label + value)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _DetailItem extends StatelessWidget {
-  final IconData icon;
+class _TableHeader extends StatelessWidget {
   final String label;
-  final String value;
-  final Color? valueColor;
-
-  const _DetailItem({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.valueColor,
-  });
+  final int flex;
+  final TextAlign align;
+  const _TableHeader(this.label,
+      {this.flex = 1, this.align = TextAlign.left});
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 14, color: Colors.grey.shade400),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    fontSize: 10,
-                    color: Colors.grey.shade500,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: valueColor ?? AppColors.onBackgroundLight,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        ],
+      flex: flex,
+      child: Text(
+        label,
+        textAlign: align,
+        style: AppTextStyles.bodySmall.copyWith(
+          fontWeight: FontWeight.w700,
+          color: Colors.grey.shade500,
+          fontSize: 11,
+        ),
       ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Colored status dot  (small 8px circle beside each row)
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _StatusDot extends StatelessWidget {
-  final InvoiceStatus status;
-  const _StatusDot({required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    Color color;
-    switch (status) {
-      case InvoiceStatus.paid:
-        color = Colors.green.shade500;
-        break;
-      case InvoiceStatus.overdue:
-        color = Colors.red.shade500;
-        break;
-      case InvoiceStatus.partial:
-        color = Colors.blue.shade500;
-        break;
-      case InvoiceStatus.pending:
-      default:
-        color = Colors.orange.shade500;
-    }
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }
@@ -948,24 +736,24 @@ class _PaymentActions extends StatelessWidget {
           // Three buttons – row on wide, column on mobile
           isWide
               ? Row(
-                  children: [
-                    Expanded(child: _WalletPayBtn(vm: vm, summary: summary)),
-                    const SizedBox(width: 10),
-                    Expanded(child: _BankPayBtn(vm: vm)),
-                    const SizedBox(width: 10),
-                    Expanded(child: _PartialPayBtn(vm: vm, summary: summary)),
-                  ],
-                )
+            children: [
+              Expanded(child: _WalletPayBtn(vm: vm, summary: summary)),
+              const SizedBox(width: 10),
+              Expanded(child: _BankPayBtn(vm: vm)),
+              const SizedBox(width: 10),
+              Expanded(child: _PartialPayBtn(vm: vm, summary: summary)),
+            ],
+          )
               : Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _WalletPayBtn(vm: vm, summary: summary),
-                    const SizedBox(height: 10),
-                    _BankPayBtn(vm: vm),
-                    const SizedBox(height: 10),
-                    _PartialPayBtn(vm: vm, summary: summary),
-                  ],
-                ),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _WalletPayBtn(vm: vm, summary: summary),
+              const SizedBox(height: 10),
+              _BankPayBtn(vm: vm),
+              const SizedBox(height: 10),
+              _PartialPayBtn(vm: vm, summary: summary),
+            ],
+          ),
         ],
       ),
     );
@@ -984,16 +772,16 @@ class _WalletPayBtn extends StatelessWidget {
       text: 'Pay with Wallet\n(SAR ${_fmt(summary.walletBalance)})',
       isLoading: vm.isProcessing,
       backgroundColor:
-          canPay ? AppColors.primaryLight : Colors.grey.shade200,
+      canPay ? AppColors.primaryLight : Colors.grey.shade200,
       textColor:
-          canPay ? AppColors.onPrimaryLight : Colors.grey.shade500,
+      canPay ? AppColors.onPrimaryLight : Colors.grey.shade500,
       onPressed: vm.isProcessing || !canPay
           ? () {}
           : () async {
-              final ok = await vm.payWithWallet();
-              if (!context.mounted) return;
-              _showResult(context, ok, 'Wallet payment processed!');
-            },
+        final ok = await vm.payWithWallet();
+        if (!context.mounted) return;
+        _showResult(context, ok, 'Wallet payment processed!');
+      },
     );
   }
 }
@@ -1008,15 +796,15 @@ class _BankPayBtn extends StatelessWidget {
       onPressed: vm.isProcessing
           ? null
           : () async {
-              final ok = await vm.payWithBank();
-              if (!context.mounted) return;
-              _showResult(context, ok, 'Bank payment initiated!');
-            },
+        final ok = await vm.payWithBank();
+        if (!context.mounted) return;
+        _showResult(context, ok, 'Bank payment initiated!');
+      },
       icon: vm.isProcessing
           ? const SizedBox(
-              width: 16, height: 16,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: AppColors.secondaryLight))
+          width: 16, height: 16,
+          child: CircularProgressIndicator(
+              strokeWidth: 2, color: AppColors.secondaryLight))
           : const Icon(Icons.account_balance_outlined, size: 18),
       label: Text('Pay with Bank',
           style: AppTextStyles.button.copyWith(
@@ -1064,7 +852,7 @@ class _PartialPayBtn extends StatelessWidget {
       context: context,
       builder: (_) => AlertDialog(
         shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('Partial Payment',
             style: AppTextStyles.h3.copyWith(fontSize: 18)),
         content: Column(
@@ -1155,7 +943,7 @@ class _DownloadButton extends StatelessWidget {
         side: BorderSide(
             color: AppColors.secondaryLight.withOpacity(0.4), width: 1.5),
         shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         padding: const EdgeInsets.symmetric(vertical: 14),
       ),
     );

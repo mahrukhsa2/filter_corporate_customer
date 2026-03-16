@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -17,7 +16,6 @@ extension QuotationStatusInfo on QuotationStatus {
   }
 
   Color get color {
-    // Using raw int values to avoid importing material here
     switch (this) {
       case QuotationStatus.approved: return const Color(0xFF2E7D32); // green
       case QuotationStatus.rejected: return const Color(0xFFC62828); // red
@@ -34,19 +32,20 @@ extension QuotationStatusInfo on QuotationStatus {
   }
 }
 
-
 class QuotationHistoryItem {
+  final String id;  // ✅ Added for API
   final String quotationNumber;
   final DateTime date;
   final String productService;
-  final String qty;           // e.g. "10 L" or "4 pcs"
+  final String qty;
   final double quotedPrice;
-  final String unit;          // e.g. "/L" or "/set"
+  final String unit;
   final QuotationStatus status;
   final String? rejectionReason;
   final String submittedBy;
 
   const QuotationHistoryItem({
+    required this.id,  // ✅ Added
     required this.quotationNumber,
     required this.date,
     required this.productService,
@@ -114,8 +113,8 @@ class QuotationHistoryFilters {
 
   bool get hasAny =>
       fromDate != null ||
-      toDate   != null ||
-      (productQuery != null && productQuery!.isNotEmpty) ||
-      status   != null ||
-      submittedBy != null;
+          toDate   != null ||
+          (productQuery != null && productQuery!.isNotEmpty) ||
+          status   != null ||
+          submittedBy != null;
 }

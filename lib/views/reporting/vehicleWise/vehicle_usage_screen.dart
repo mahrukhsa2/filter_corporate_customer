@@ -1,3 +1,4 @@
+import 'package:filter_corporate_customer/models/vehicle_model.dart';
 import 'package:filter_corporate_customer/widgets/custom_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -135,7 +136,7 @@ class _FiltersBarState extends State<_FiltersBar> {
         : widget.vm.filters.toDate;
     final picked  = await showDatePicker(
       context: context,
-      initialDate: current ?? now,
+      initialDate: current != null && current.isBefore(now) ? current : now,
       firstDate: DateTime(2023),
       lastDate: now,
       builder: (ctx, child) => Theme(
@@ -222,7 +223,7 @@ class _FiltersBarState extends State<_FiltersBar> {
 
           // Row 2 — vehicle dropdown
           _VehicleDropdown(
-            vehicles: vm.allVehiclesForFilter,
+            vehicles: vm.dropdownVehicles,
             value: f.vehicleId,
             onChanged: (id) => vm.updateFilters(id == null
                 ? f.copyWith(clearVehicle: true)
@@ -420,7 +421,18 @@ class _VehicleAccordionList extends StatelessWidget {
             icon: Icons.directions_car_outlined,
             title: 'Vehicle List'),
         const SizedBox(height: 10),
-        if (vm.items.isEmpty)
+        if (vm.isTableLoading)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 48),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Center(
+              child: CircularProgressIndicator(color: AppColors.primaryLight),
+            ),
+          )
+        else if (vm.items.isEmpty)
           Container(
             padding: const EdgeInsets.symmetric(vertical: 36),
             decoration: BoxDecoration(
@@ -598,7 +610,9 @@ class _VehicleCardBody extends StatelessWidget {
                     child: _StatCell(
                       label: 'Last Service',
                       value:
-                      '${_shortDate(vehicle.lastServiceDate)} – ${vehicle.lastServiceType}',
+                      vehicle.lastServiceDate != null
+                          ? '${_shortDate(vehicle.lastServiceDate!)} – ${vehicle.lastServiceType}'
+                          : '—',
                     ),
                   ),
                 ],
@@ -1061,11 +1075,19 @@ class _ExportButton extends StatelessWidget {
             : () async {
           await vm.exportReport();
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Report exported successfully'),
-            backgroundColor: AppColors.secondaryLight,
-            behavior: SnackBarBehavior.floating,
-          ));
+          if (vm.exportError != null) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(vm.exportError!),
+              backgroundColor: Colors.red.shade600,
+              behavior: SnackBarBehavior.floating,
+            ));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('Report exported successfully'),
+              backgroundColor: AppColors.secondaryLight,
+              behavior: SnackBarBehavior.floating,
+            ));
+          }
         },
       ),
     );
@@ -1159,7 +1181,7 @@ class _FilterChip extends StatelessWidget {
 }
 
 class _VehicleDropdown extends StatelessWidget {
-  final List<VehicleUsageItem> vehicles;
+  final List<VehicleModel> vehicles;
   final String? value;
   final ValueChanged<String?> onChanged;
   const _VehicleDropdown({
@@ -1207,7 +1229,7 @@ class _VehicleDropdown extends StatelessWidget {
           ...vehicles.map((v) => DropdownMenuItem(
             value: v.id,
             child: Text(
-              '${v.vehicleName} (${v.plateNumber})',
+              '${v.make} ${v.model} (${v.plateNumber})',  // ← was v.vehicleName
               style: AppTextStyles.bodySmall
                   .copyWith(color: Colors.black, fontSize: 12),
               overflow: TextOverflow.ellipsis,

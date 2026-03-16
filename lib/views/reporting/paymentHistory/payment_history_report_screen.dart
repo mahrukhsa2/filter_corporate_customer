@@ -45,15 +45,15 @@ class _PHBody extends StatelessWidget {
           Expanded(
             child: vm.isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primaryLight))
+                child: CircularProgressIndicator(
+                    color: AppColors.primaryLight))
                 : RefreshIndicator(
-                    color: AppColors.primaryLight,
-                    onRefresh: vm.refresh,
-                    child: isWide
-                        ? _WideLayout(vm: vm)
-                        : _NarrowLayout(vm: vm),
-                  ),
+              color: AppColors.primaryLight,
+              onRefresh: vm.refresh,
+              child: isWide
+                  ? _WideLayout(vm: vm)
+                  : _NarrowLayout(vm: vm),
+            ),
           ),
         ],
       ),
@@ -262,13 +262,13 @@ const double _cMethod    = 140.0;
 const double _cInvoice   = 110.0;
 const double _cStatus    = 100.0;
 const double _cRef       = 120.0;
-const double _cAction    = 120.0;
+const double _cAction    = 100.0;
 const double _rHPad      =  16.0;
 
 double get _tableWidth =>
     _rHPad * 2 +
-    _cDate + _cAmount + _cMethod +
-    _cInvoice + _cStatus + _cRef + _cAction;
+        _cDate + _cAmount + _cMethod +
+        _cInvoice + _cStatus + _cRef + _cAction;
 
 class _TableCard extends StatelessWidget {
   final PaymentHistoryReportViewModel vm;
@@ -310,13 +310,26 @@ class _TableCard extends StatelessWidget {
                       _TH(label: 'Invoice #',  width: _cInvoice),
                       _TH(label: 'Status',     width: _cStatus),
                       _TH(label: 'Reference',  width: _cRef),
-                      _TH(label: 'Action',     width: _cAction),
+                      _TH(label: 'Action', width: _cAction),
                     ],
                   ),
                 ),
 
+                // Table-loading spinner (filter change)
+                if (vm.isTableLoading)
+                  SizedBox(
+                    width: _tableWidth,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                            color: AppColors.primaryLight),
+                      ),
+                    ),
+                  )
+
                 // Empty state
-                if (vm.items.isEmpty)
+                else if (vm.items.isEmpty)
                   SizedBox(
                     width: _tableWidth,
                     child: Padding(
@@ -332,17 +345,18 @@ class _TableCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                  ),
+                  )
 
                 // Data rows
-                ...List.generate(
-                  vm.items.length,
-                  (i) => _TableRow(
-                    item:   vm.items[i],
-                    isEven: i % 2 == 0,
-                    isLast: i == vm.items.length - 1,
+                else
+                  ...List.generate(
+                    vm.items.length,
+                        (i) => _TableRow(
+                      item:   vm.items[i],
+                      isEven: i % 2 == 0,
+                      isLast: i == vm.items.length - 1,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -383,9 +397,12 @@ class _TableRow extends StatelessWidget {
   void _showDetail(BuildContext context) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _DetailSheet(item: item),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _PaymentDetailSheet(item: item),
     );
   }
 
@@ -489,22 +506,10 @@ class _TableRow extends StatelessWidget {
           // Action
           SizedBox(
             width: _cAction,
-            child: GestureDetector(
+            child: _PHActionBtn(
+              label: 'View',
+              icon: Icons.visibility_outlined,
               onTap: () => _showDetail(context),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(item.actionType.label,
-                    textAlign: TextAlign.center,
-                    style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.secondaryLight,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11)),
-              ),
             ),
           ),
         ],
@@ -513,20 +518,25 @@ class _TableRow extends StatelessWidget {
   }
 }
 
+
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Detail bottom sheet
+// Payment detail bottom sheet
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _DetailSheet extends StatelessWidget {
+class _PaymentDetailSheet extends StatelessWidget {
   final PaymentHistoryItem item;
-  const _DetailSheet({required this.item});
+  const _PaymentDetailSheet({required this.item});
 
   @override
   Widget build(BuildContext context) {
     final m = item.method;
     final s = item.status;
-
-    return Padding(
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -543,67 +553,54 @@ class _DetailSheet extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
-          // Header row
+          // Header
           Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: m.bgColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(m.icon, color: m.color, size: 22),
+                    color: m.bgColor,
+                    borderRadius: BorderRadius.circular(12)),
+                child: Icon(m.icon, size: 20, color: m.color),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(m.label,
+                    Text(item.invoiceRef,
                         style: AppTextStyles.bodyMedium.copyWith(
-                            fontWeight: FontWeight.w800)),
-                    Text(_longDate(item.date),
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.secondaryLight)),
+                    Text(_shortDate(item.date),
                         style: AppTextStyles.bodySmall
                             .copyWith(color: Colors.grey.shade500)),
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(item.formattedAmount,
-                      style: AppTextStyles.h3.copyWith(
-                          color: AppColors.secondaryLight,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 20)),
-                  Container(
-                    margin: const EdgeInsets.only(top: 4),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: s.bgColor,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(s.label,
-                        style: AppTextStyles.bodySmall.copyWith(
-                            color: s.color,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 11)),
-                  ),
-                ],
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                    color: s.bgColor,
+                    borderRadius: BorderRadius.circular(20)),
+                child: Text(s.label,
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: s.color,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11)),
               ),
             ],
           ),
           const SizedBox(height: 20),
-          Divider(height: 1, color: Colors.grey.shade100),
+          const Divider(height: 1, color: Color(0xFFF0F0F0)),
           const SizedBox(height: 16),
 
-          _DetailRow('Date',        _longDate(item.date)),
-          _DetailRow('Method',      m.label),
-          _DetailRow('Amount',      item.formattedAmount),
-          _DetailRow('Invoice Ref', item.invoiceRef),
-          _DetailRow('Reference',   item.reference),
-          _DetailRow('Status',      s.label),
+          _PDRow('Amount',     item.formattedAmount,
+              valueColor: AppColors.secondaryLight),
+          _PDRow('Method',     m.label),
+          _PDRow('Reference',  item.reference),
+          _PDRow('Invoice Ref', item.invoiceRef),
           const SizedBox(height: 20),
 
           SizedBox(
@@ -621,31 +618,91 @@ class _DetailSheet extends StatelessWidget {
   }
 }
 
-class _DetailRow extends StatelessWidget {
+class _PDRow extends StatelessWidget {
   final String label;
   final String value;
-  const _DetailRow(this.label, this.value);
+  final Color? valueColor;
+  const _PDRow(this.label, this.value, {this.valueColor});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 120,
+            width: 110,
             child: Text(label,
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: Colors.grey.shade500)),
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: Colors.grey.shade500,
+                    fontWeight: FontWeight.w600)),
           ),
           Expanded(
             child: Text(value,
                 style: AppTextStyles.bodySmall.copyWith(
                     fontWeight: FontWeight.w700,
-                    color: AppColors.onBackgroundLight)),
+                    color: valueColor ?? AppColors.onBackgroundLight)),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payment history action button — used in table rows
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PHActionBtn extends StatelessWidget {
+  final String     label;
+  final IconData   icon;
+  final VoidCallback onTap;
+  final bool       isSecondary;
+
+  const _PHActionBtn({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.isSecondary = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSecondary
+              ? AppColors.backgroundLight
+              : AppColors.primaryLight.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(7),
+          border: isSecondary
+              ? Border.all(color: Colors.grey.shade300)
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                size: 11,
+                color: isSecondary
+                    ? Colors.grey.shade600
+                    : AppColors.secondaryLight),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: isSecondary
+                    ? Colors.grey.shade600
+                    : AppColors.secondaryLight,
+                fontWeight: FontWeight.w700,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -731,7 +788,7 @@ class _SummarySection extends StatelessWidget {
         Container(
           width: double.infinity,
           padding:
-              const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+          const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
           decoration: BoxDecoration(
             color: AppColors.secondaryLight,
             borderRadius: BorderRadius.circular(14),
@@ -874,14 +931,22 @@ class _ExportButton extends StatelessWidget {
         onPressed: vm.isExporting
             ? () {}
             : () async {
-                await vm.exportReport();
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: const Text('Report exported successfully'),
-                  backgroundColor: AppColors.secondaryLight,
-                  behavior: SnackBarBehavior.floating,
-                ));
-              },
+          await vm.exportReport();
+          if (!context.mounted) return;
+          if (vm.exportError != null) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(vm.exportError!),
+              backgroundColor: Colors.red.shade600,
+              behavior: SnackBarBehavior.floating,
+            ));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('Report exported successfully'),
+              backgroundColor: AppColors.secondaryLight,
+              behavior: SnackBarBehavior.floating,
+            ));
+          }
+        },
       ),
     );
   }
@@ -953,23 +1018,23 @@ DropdownMenuItem<T> _ddItem<T>(T value, String label) =>
     );
 
 InputDecoration _dropdownDeco(String hint) => InputDecoration(
-      hintText: hint,
-      hintStyle: AppTextStyles.bodySmall
-          .copyWith(color: Colors.grey.shade400, fontSize: 12),
-      isDense: true,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide:
-            const BorderSide(color: AppColors.primaryLight, width: 1.5),
-      ),
-    );
+  hintText: hint,
+  hintStyle: AppTextStyles.bodySmall
+      .copyWith(color: Colors.grey.shade400, fontSize: 12),
+  isDense: true,
+  contentPadding:
+  const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+  enabledBorder: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(10),
+    borderSide: BorderSide(color: Colors.grey.shade300),
+  ),
+  focusedBorder: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(10),
+    borderSide:
+    const BorderSide(color: AppColors.primaryLight, width: 1.5),
+  ),
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Filter chip (date picker trigger)
@@ -1019,7 +1084,7 @@ class _FilterChip extends StatelessWidget {
                           ? AppColors.onBackgroundLight
                           : Colors.grey.shade500,
                       fontWeight:
-                          active ? FontWeight.w700 : FontWeight.normal,
+                      active ? FontWeight.w700 : FontWeight.normal,
                       fontSize: 11),
                   overflow: TextOverflow.ellipsis),
             ),

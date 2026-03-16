@@ -16,6 +16,15 @@ extension PaymentMethodInfo on PaymentMethod {
     }
   }
 
+  String get apiValue {
+    switch (this) {
+      case PaymentMethod.wallet:       return 'Wallet';
+      case PaymentMethod.creditCard:   return 'Credit Card';
+      case PaymentMethod.bankTransfer: return 'Bank Transfer';
+      case PaymentMethod.cash:         return 'Cash';
+    }
+  }
+
   IconData get icon {
     switch (this) {
       case PaymentMethod.wallet:       return Icons.account_balance_wallet_outlined;
@@ -56,6 +65,15 @@ extension PaymentStatusInfo on PaymentStatus {
     }
   }
 
+  String get apiValue {
+    switch (this) {
+      case PaymentStatus.paid:    return 'Paid';
+      case PaymentStatus.success: return 'Success';
+      case PaymentStatus.pending: return 'Pending';
+      case PaymentStatus.failed:  return 'Failed';
+    }
+  }
+
   Color get color {
     switch (this) {
       case PaymentStatus.paid:    return const Color(0xFF2E7D32);
@@ -75,7 +93,6 @@ extension PaymentStatusInfo on PaymentStatus {
   }
 }
 
-/// The action label shown in the table row
 enum PaymentActionType { viewReceipt, viewProof, viewInvoice }
 
 extension PaymentActionLabel on PaymentActionType {
@@ -89,14 +106,14 @@ extension PaymentActionLabel on PaymentActionType {
 }
 
 class PaymentHistoryItem {
-  final String id;
-  final DateTime date;
-  final double amount;
-  final PaymentMethod method;
-  final String invoiceRef;   // "INV-7845" or "Top-up"
-  final PaymentStatus status;
-  final String reference;    // WAL-, TXN-, REF-
-  final PaymentActionType actionType;
+  final String             id;
+  final DateTime           date;
+  final double             amount;
+  final PaymentMethod      method;
+  final String             invoiceRef;
+  final PaymentStatus      status;
+  final String             reference;
+  final PaymentActionType  actionType;
 
   const PaymentHistoryItem({
     required this.id,
@@ -110,6 +127,56 @@ class PaymentHistoryItem {
   });
 
   String get formattedAmount => 'SAR ${_fmtAmt(amount)}';
+
+  factory PaymentHistoryItem.fromMap(Map<String, dynamic> map) {
+    // Method
+    final rawMethod = (map['method'] ?? map['paymentMethod'] ?? '').toString().toLowerCase();
+    PaymentMethod method;
+    if (rawMethod.contains('wallet'))        method = PaymentMethod.wallet;
+    else if (rawMethod.contains('card'))     method = PaymentMethod.creditCard;
+    else if (rawMethod.contains('bank') ||
+        rawMethod.contains('transfer')) method = PaymentMethod.bankTransfer;
+    else if (rawMethod.contains('cash'))     method = PaymentMethod.cash;
+    else                                     method = PaymentMethod.wallet;
+
+    // Status
+    final rawStatus = (map['status'] ?? '').toString().toLowerCase();
+    PaymentStatus status;
+    switch (rawStatus) {
+      case 'paid':    status = PaymentStatus.paid;    break;
+      case 'success': status = PaymentStatus.success; break;
+      case 'failed':  status = PaymentStatus.failed;  break;
+      default:        status = PaymentStatus.pending;
+    }
+
+    // Action type — derive from method
+    PaymentActionType actionType;
+    switch (method) {
+      case PaymentMethod.bankTransfer: actionType = PaymentActionType.viewProof;   break;
+      case PaymentMethod.cash:         actionType = PaymentActionType.viewInvoice; break;
+      default:                         actionType = PaymentActionType.viewReceipt;
+    }
+
+    // Date
+    final rawDate = map['date'] ?? map['created_at'] ?? map['paymentDate'];
+    DateTime date;
+    try {
+      date = rawDate != null ? DateTime.parse(rawDate.toString()) : DateTime.now();
+    } catch (_) {
+      date = DateTime.now();
+    }
+
+    return PaymentHistoryItem(
+      id:         (map['id'] ?? '').toString(),
+      date:       date,
+      amount:     _toDouble(map['amount']),
+      method:     method,
+      invoiceRef: (map['invoiceRef'] ?? map['invoice_number'] ?? map['invoiceNumber'] ?? '—').toString(),
+      status:     status,
+      reference:  (map['reference'] ?? map['transactionRef'] ?? map['ref'] ?? '—').toString(),
+      actionType: actionType,
+    );
+  }
 }
 
 String _fmtAmt(double v) {
@@ -127,8 +194,8 @@ class PaymentHistorySummary {
   final double byWallet;
   final double byCard;
   final double byTransfer;
-  final double byCash;
-  final int totalTransactions;
+  final double byCash;          // not in API — computed client-side
+  final int    totalTransactions; // not in API — computed client-side
 
   const PaymentHistorySummary({
     required this.totalPaid,
@@ -138,6 +205,23 @@ class PaymentHistorySummary {
     required this.byCash,
     required this.totalTransactions,
   });
+
+  factory PaymentHistorySummary.fromApiMap(
+      Map<String, dynamic> map, List<PaymentHistoryItem> items) {
+    // byCash and totalTransactions not in API — derive from parsed items
+    final byCash = items
+        .where((i) => i.method == PaymentMethod.cash)
+        .fold(0.0, (s, i) => s + i.amount);
+
+    return PaymentHistorySummary(
+      totalPaid:          _toDouble(map['totalPaid']),
+      byWallet:           _toDouble(map['byWallet']),
+      byCard:             _toDouble(map['byCard']),
+      byTransfer:         _toDouble(map['byTransfer']),
+      byCash:             byCash,
+      totalTransactions:  items.length,
+    );
+  }
 }
 
 class PaymentHistoryFilters {
@@ -173,5 +257,25 @@ class PaymentHistoryFilters {
 
   bool get hasAny =>
       fromDate != null || toDate != null ||
-      method   != null || status != null;
+          method   != null || status != null;
+
+  Map<String, String> toQueryParams() {
+    final p = <String, String>{};
+    if (fromDate != null) p['startDate'] = _fmtDate(fromDate!);
+    if (toDate   != null) p['endDate']   = _fmtDate(toDate!);
+    if (method   != null) p['method']    = method!.apiValue;
+    if (status   != null) p['status']    = status!.apiValue;
+    return p;
+  }
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+double _toDouble(dynamic v) {
+  if (v == null) return 0.0;
+  if (v is num)  return v.toDouble();
+  return double.tryParse(v.toString()) ?? 0.0;
+}
+
+String _fmtDate(DateTime d) =>
+    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';

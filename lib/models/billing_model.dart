@@ -26,12 +26,18 @@ class InvoiceModel {
 }
 
 class MonthlyBillingSummary {
-  final String monthLabel;         // e.g. "February 2026"
+  final String monthLabel;
   final double totalDue;
   final DateTime dueDate;
   final double walletBalance;
   final BillingPaymentStatus status;
   final List<InvoiceModel> invoices;
+
+  // ── These come directly from the API (no client-side computation) ─────────
+  final double _paidAmount;
+  final double _pendingAmount;
+  final int    _paidCount;
+  final int    _pendingCount;
 
   const MonthlyBillingSummary({
     required this.monthLabel,
@@ -40,24 +46,19 @@ class MonthlyBillingSummary {
     required this.walletBalance,
     required this.status,
     required this.invoices,
-  });
+    required double paidAmount,
+    required double pendingAmount,
+    required int    paidCount,
+    required int    pendingCount,
+  })  : _paidAmount    = paidAmount,
+        _pendingAmount = pendingAmount,
+        _paidCount     = paidCount,
+        _pendingCount  = pendingCount;
 
-  double get totalPaid => invoices
-      .where((i) => i.status == InvoiceStatus.paid)
-      .fold(0, (sum, i) => sum + i.amount);
-
-  double get totalPending => invoices
-      .where((i) => i.status == InvoiceStatus.pending ||
-          i.status == InvoiceStatus.overdue)
-      .fold(0, (sum, i) => sum + i.amount);
-
-  int get paidCount =>
-      invoices.where((i) => i.status == InvoiceStatus.paid).length;
-
-  int get pendingCount => invoices
-      .where((i) => i.status == InvoiceStatus.pending ||
-          i.status == InvoiceStatus.overdue)
-      .length;
+  double get totalPaid    => _paidAmount;
+  double get totalPending => _pendingAmount;
+  int    get paidCount    => _paidCount;
+  int    get pendingCount => _pendingCount;
 }
 
 class PartialPaymentModel {

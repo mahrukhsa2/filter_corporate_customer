@@ -1,169 +1,275 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import '../../../models/booking_service_report_model.dart';
 
-enum BSLoadStatus { idle, loading, loaded }
+import '../../../data/app_cache.dart';
+import '../../../data/network/api_constants.dart';
+import '../../../data/network/api_response.dart';
+import '../../../data/network/base_api_service.dart';
+import '../../../models/booking_service_report_model.dart';
+import '../../../models/branch_model.dart';
+import '../../../services/excel_export_service.dart';
+import '../../../widgets/app_alert.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// lib/features/reports/booking/booking_service_report_view_model.dart
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum BSLoadStatus { idle, loading, loaded, error }
 
 class BookingServiceReportViewModel extends ChangeNotifier {
-  BSLoadStatus _status = BSLoadStatus.idle;
-  bool _isExporting    = false;
+  // ── State ─────────────────────────────────────────────────────────────────
+  BSLoadStatus _status        = BSLoadStatus.idle;
+  bool         _isTableLoading = false; // filter refetch — does NOT rebuild whole screen
+  bool         _isExporting   = false;
+  String?      _exportError;
+  String?      _errorMessage;
 
-  List<BookingServiceItem> _all      = [];
-  List<BookingServiceItem> _filtered = [];
-  BookingServiceSummary?   _summary;
-  BookingServiceFilters    _filters  = const BookingServiceFilters();
+  List<BookingServiceItem>  _all      = [];
+  List<BookingServiceItem>  _filtered = [];
+  BookingServiceSummary?    _summary;
+  BookingServiceFilters     _filters  = const BookingServiceFilters();
 
-  bool get isLoading   => _status == BSLoadStatus.loading;
-  bool get isExporting => _isExporting;
+  // ── Branches from AppCache (same source as BookingScreen) ─────────────────
+  List<BranchModel> get branchModels => AppCache.allowedBranches;
+
+  // ── Getters ───────────────────────────────────────────────────────────────
+  bool get isLoading      => _status == BSLoadStatus.loading;
+  bool get isTableLoading => _isTableLoading;
+  bool get isExporting    => _isExporting;
+  String? get exportError  => _exportError;
+  bool get hasError       => _status == BSLoadStatus.error;
+  String? get errorMessage => _errorMessage;
+
   List<BookingServiceItem> get items   => _filtered;
   BookingServiceSummary?   get summary => _summary;
   BookingServiceFilters    get filters => _filters;
 
-  List<String> get branches => ['Branch A', 'Branch B', 'Branch C', 'Branch D'];
-
-  BookingServiceReportViewModel() { _load(); }
-
-  Future<void> _load() async {
-    _status = BSLoadStatus.loading;
-    notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    _all = [
-      BookingServiceItem(
-        id: 'b01', bookingId: 'BK-9876',
-        date: DateTime(2026, 2, 12), vehiclePlate: 'ABC-123',
-        department: 'Oil Change', serviceType: ServiceType.oilChange,
-        branch: 'Branch A', status: BookingStatus.completed, amount: 285,
-      ),
-      BookingServiceItem(
-        id: 'b02', bookingId: 'BK-9875',
-        date: DateTime(2026, 2, 5), vehiclePlate: 'XYZ-789',
-        department: 'Full Service', serviceType: ServiceType.fullService,
-        branch: 'Branch B', status: BookingStatus.inProgress,
-      ),
-      BookingServiceItem(
-        id: 'b03', bookingId: 'BK-9874',
-        date: DateTime(2026, 1, 28), vehiclePlate: 'DEF-456',
-        department: 'Tire Service', serviceType: ServiceType.tireService,
-        branch: 'Branch A', status: BookingStatus.completed, amount: 8200,
-      ),
-      BookingServiceItem(
-        id: 'b04', bookingId: 'BK-9873',
-        date: DateTime(2026, 1, 20), vehiclePlate: 'GHI-321',
-        department: 'Car Wash', serviceType: ServiceType.carWash,
-        branch: 'Branch C', status: BookingStatus.completed, amount: 120,
-      ),
-      BookingServiceItem(
-        id: 'b05', bookingId: 'BK-9872',
-        date: DateTime(2026, 1, 15), vehiclePlate: 'JKL-654',
-        department: 'Inspection', serviceType: ServiceType.inspection,
-        branch: 'Branch B', status: BookingStatus.cancelled,
-      ),
-      BookingServiceItem(
-        id: 'b06', bookingId: 'BK-9871',
-        date: DateTime(2026, 1, 10), vehiclePlate: 'MNO-987',
-        department: 'Brake Service', serviceType: ServiceType.brakes,
-        branch: 'Branch D', status: BookingStatus.completed, amount: 1400,
-      ),
-      BookingServiceItem(
-        id: 'b07', bookingId: 'BK-9870',
-        date: DateTime(2025, 12, 28), vehiclePlate: 'PQR-111',
-        department: 'A/C Service', serviceType: ServiceType.ac,
-        branch: 'Branch A', status: BookingStatus.completed, amount: 950,
-      ),
-      BookingServiceItem(
-        id: 'b08', bookingId: 'BK-9869',
-        date: DateTime(2025, 12, 20), vehiclePlate: 'STU-222',
-        department: 'Oil Change', serviceType: ServiceType.oilChange,
-        branch: 'Branch C', status: BookingStatus.pending,
-      ),
-      BookingServiceItem(
-        id: 'b09', bookingId: 'BK-9868',
-        date: DateTime(2025, 12, 15), vehiclePlate: 'VWX-333',
-        department: 'Full Service', serviceType: ServiceType.fullService,
-        branch: 'Branch B', status: BookingStatus.completed, amount: 3200,
-      ),
-      BookingServiceItem(
-        id: 'b10', bookingId: 'BK-9867',
-        date: DateTime(2025, 12, 8), vehiclePlate: 'YZA-444',
-        department: 'Tire Service', serviceType: ServiceType.tireService,
-        branch: 'Branch D', status: BookingStatus.cancelled,
-      ),
-      BookingServiceItem(
-        id: 'b11', bookingId: 'BK-9866',
-        date: DateTime(2025, 11, 30), vehiclePlate: 'BCD-555',
-        department: 'Car Wash', serviceType: ServiceType.carWash,
-        branch: 'Branch A', status: BookingStatus.completed, amount: 80,
-      ),
-      BookingServiceItem(
-        id: 'b12', bookingId: 'BK-9865',
-        date: DateTime(2025, 11, 22), vehiclePlate: 'EFG-666',
-        department: 'Inspection', serviceType: ServiceType.inspection,
-        branch: 'Branch C', status: BookingStatus.completed, amount: 450,
-      ),
-    ];
-
-    _filtered = List.from(_all);
-    _summary  = _buildSummary(_all);
-    _status   = BSLoadStatus.loaded;
-    notifyListeners();
+  // ── Init ──────────────────────────────────────────────────────────────────
+  BookingServiceReportViewModel() {
+    _load();
   }
 
-  Future<void> refresh() => _load();
+  // ── Public ────────────────────────────────────────────────────────────────
 
-  void updateFilters(BookingServiceFilters f) {
+  Future<void> refresh({BuildContext? context}) => _load(context: context);
+
+  void updateFilters(BookingServiceFilters f, {BuildContext? context}) {
     _filters = f;
-    _applyFilters();
+    _fetchForFilter(context: context);
+  }
+
+  void clearFilters({BuildContext? context}) {
+    _filters = const BookingServiceFilters();
+    _fetchForFilter(context: context);
+  }
+
+  Future<void> exportReport() async {
+    if (_filtered.isEmpty) {
+      _exportError = 'No data available to export.';
+      notifyListeners();
+      return;
+    }
+    _isExporting = true;
+    notifyListeners();
+
+    try {
+      // Use current filtered list — reflects whatever filters are active
+      final rows = _filtered.map((item) => {
+        'Booking ID':   item.bookingId,
+        'Date':         item.date.toIso8601String(),
+        'Vehicle':      item.vehiclePlate,
+        'Department':   item.department,
+        'Amount (SAR)': item.amount ?? 0,
+        'Status':       item.status.name,
+      }).toList();
+
+      final summary = _summary == null ? null : {
+        'Total':       _summary!.totalBookings,
+        'Completed':   _summary!.completed,
+        'In Progress': _summary!.inProgress,
+        'Pending':     _summary!.pending,
+        'Cancelled':   _summary!.cancelled,
+        'Total Spend': _summary!.totalSpend,
+      };
+
+      _exportError = null;
+      await ExcelExportService.exportFromList(
+        title:    'Booking & Service History',
+        rows:     rows,
+        fromDate: _filters.fromDate ?? DateTime.now().subtract(const Duration(days: 30)),
+        toDate:   _filters.toDate   ?? DateTime.now(),
+        summary:  summary,
+      );
+
+      debugPrint('[BookingServiceReportVM] export done');
+    } on ExcelExportException catch (e) {
+      _exportError = e.message;
+      debugPrint('[BookingServiceReportVM] no data: ${e.message}');
+    } catch (e) {
+      _exportError = 'Export failed. Please try again.';
+      debugPrint('[BookingServiceReportVM] export error: $e');
+    }
+
+    _isExporting = false;
     notifyListeners();
   }
 
-  void clearFilters() {
-    _filters  = const BookingServiceFilters();
-    _filtered = List.from(_all);
+  // ── Initial full load ─────────────────────────────────────────────────────
+
+  Future<void> _load({BuildContext? context}) async {
+    _status       = BSLoadStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    await _fetchHistory(reset: true, silent: true, context: context);
+
+    _status = BSLoadStatus.loaded;
     notifyListeners();
   }
 
-  void _applyFilters() {
-    _filtered = _all.where((b) {
-      if (_filters.fromDate != null && b.date.isBefore(_filters.fromDate!))
-        return false;
-      if (_filters.toDate != null &&
-          b.date.isAfter(_filters.toDate!.add(const Duration(days: 1))))
-        return false;
-      if (_filters.status != null && b.status != _filters.status)
-        return false;
-      if (_filters.branch != null && b.branch != _filters.branch)
-        return false;
-      return true;
-    }).toList();
+  // ── Filter-triggered refetch — only the table spins ───────────────────────
+
+  Future<void> _fetchForFilter({BuildContext? context}) async {
+    _isTableLoading = true;
+    notifyListeners();
+    await _fetchHistory(reset: true, silent: true, context: context);
+    _isTableLoading = false;
+    notifyListeners();
   }
+
+  // ── Core fetch ────────────────────────────────────────────────────────────
+  // GET /corporate/reports/history
+  // Params: status, startDate, endDate, branchId
+  // (limit/offset omitted — backend parses as string, causing errors)
+
+  Future<void> _fetchHistory({
+    bool reset          = false,
+    bool silent         = false,
+    BuildContext? context,
+  }) async {
+    if (!silent) {
+      _status = BSLoadStatus.loading;
+      notifyListeners();
+    }
+
+    if (reset) _all = [];
+
+    final res = await BaseApiService.get(
+      ApiConstants.reportsBookingServiceHistory,
+      queryParams: _buildQueryParams(),
+      requiresAuth: true,
+    );
+
+    debugPrint('[BookingServiceReportVM] fetchHistory ← '
+        'success=${res.success} status=${res.statusCode}');
+
+    if (res.success && res.data != null) {
+      final rawList = res.data!['history'];
+      if (rawList is List) {
+        _all = rawList
+            .whereType<Map<String, dynamic>>()
+            .map(_parseItem)
+            .whereType<BookingServiceItem>()
+            .toList();
+      }
+
+      _filtered     = List.from(_all);
+      _summary      = _buildSummary(_all);
+      _status       = BSLoadStatus.loaded;
+      _errorMessage = null;
+
+      debugPrint('[BookingServiceReportVM] loaded ${_all.length} items');
+    } else {
+      _status       = BSLoadStatus.error;
+      _errorMessage = res.message ?? 'Failed to load booking history.';
+      debugPrint('[BookingServiceReportVM] error: ${res.message}');
+
+      if (context != null && context.mounted) {
+        await AppAlert.apiError(
+          context,
+          errorType: res.errorType,
+          message:   res.message,
+          onRetry: res.errorType == ApiErrorType.noInternet ||
+              res.errorType == ApiErrorType.timeout
+              ? () => _load(context: context)
+              : null,
+        );
+      }
+    }
+
+    if (!silent) notifyListeners();
+  }
+
+  // ── Build query params ────────────────────────────────────────────────────
+
+  Map<String, String> _buildQueryParams() {
+    final params = <String, String>{};
+
+    if (_filters.fromDate != null) {
+      params['startDate'] =
+          _filters.fromDate!.toIso8601String().split('T').first;
+    }
+    if (_filters.toDate != null) {
+      params['endDate'] =
+          _filters.toDate!.toIso8601String().split('T').first;
+    }
+    if (_filters.status != null) {
+      // Map enum → API string value
+      params['status'] = _statusToApiString(_filters.status!);
+    }
+    if (_filters.branchId != null) {
+      params['branchId'] = _filters.branchId!;
+    }
+
+    return params;
+  }
+
+  String _statusToApiString(BookingStatus s) {
+    switch (s) {
+      case BookingStatus.completed:  return 'completed';
+      case BookingStatus.inProgress: return 'in_progress';
+      case BookingStatus.cancelled:  return 'cancelled';
+      case BookingStatus.pending:    return 'pending';
+      case BookingStatus.submitted:  return 'submitted';
+      case BookingStatus.draft:      return 'draft';
+    }
+  }
+
+  // ── Parse a single history item ───────────────────────────────────────────
+
+  BookingServiceItem? _parseItem(Map<String, dynamic> map) {
+    try {
+      return BookingServiceItem.fromApiMap(map);
+    } catch (e) {
+      debugPrint('[BookingServiceReportVM] _parseItem error: $e');
+      return null;
+    }
+  }
+
+  // ── Build summary from loaded list ────────────────────────────────────────
 
   BookingServiceSummary _buildSummary(List<BookingServiceItem> list) {
-    int completed = 0, inProgress = 0, cancelled = 0, pending = 0;
+    int completed = 0, inProgress = 0, cancelled = 0, pending = 0, submitted = 0;
     double spend = 0;
     for (final b in list) {
       switch (b.status) {
         case BookingStatus.completed:  completed++;  break;
         case BookingStatus.inProgress: inProgress++; break;
         case BookingStatus.cancelled:  cancelled++;  break;
-        case BookingStatus.pending:    pending++;    break;
+        case BookingStatus.submitted:  submitted++;  break;
+        case BookingStatus.pending:
+        case BookingStatus.draft:      pending++;    break;
       }
       if (b.amount != null) spend += b.amount!;
     }
     return BookingServiceSummary(
       totalBookings: list.length,
-      completed:  completed,
-      inProgress: inProgress,
-      cancelled:  cancelled,
-      pending:    pending,
-      totalSpend: spend,
+      completed:     completed,
+      inProgress:    inProgress,
+      cancelled:     cancelled,
+      pending:       pending,
+      submitted:     submitted,
+      totalSpend:    spend,
     );
-  }
-
-  Future<void> exportReport() async {
-    _isExporting = true;
-    notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 1200));
-    _isExporting = false;
-    notifyListeners();
   }
 }

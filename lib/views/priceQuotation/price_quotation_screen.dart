@@ -2,8 +2,12 @@ import 'package:filter_corporate_customer/widgets/custom_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../../data/network/api_response.dart';
+import '../../data/repositories/quotation_repository.dart';
+import '../../models/product_quotation.dart';
 import '../../utils/app_colors.dart';
 import '../../utils/app_text_styles.dart';
+import '../../widgets/app_alert.dart';
 import '../../widgets/custom_button.dart';
 import 'price_quotation_view_model.dart';
 
@@ -44,20 +48,16 @@ class _PriceQuotationBody extends StatelessWidget {
             showBackButton: true,
           ),
           Expanded(
-            child: vm.isLoadingProducts
-                ? const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primaryLight))
-                : isWide
-                    ? _WideLayout(vm: vm)
-                    : _NarrowLayout(vm: vm),
+            // ✅ Always show layout - loading happens inline in search dropdown
+            child: isWide
+                ? _WideLayout(vm: vm)
+                : _NarrowLayout(vm: vm),
           ),
         ],
       ),
     );
   }
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Layouts
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,6 +136,10 @@ class _WideLayout extends StatelessWidget {
 // Search bar with dropdown suggestions
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Updated _SearchBar with inline loading - REPLACE EXISTING _SearchBar
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _SearchBar extends StatefulWidget {
   final PriceQuotationViewModel vm;
   const _SearchBar({required this.vm});
@@ -174,13 +178,13 @@ class _SearchBarState extends State<_SearchBar> {
             prefixIcon: const Icon(Icons.search_rounded, color: Colors.grey),
             suffixIcon: vm.searchQuery.isNotEmpty
                 ? IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 18),
-                    onPressed: () {
-                      _ctrl.clear();
-                      vm.onSearchChanged('');
-                      _focus.unfocus();
-                    },
-                  )
+              icon: const Icon(Icons.close_rounded, size: 18),
+              onPressed: () {
+                _ctrl.clear();
+                vm.onSearchChanged('');
+                _focus.unfocus();
+              },
+            )
                 : null,
             filled: true,
             fillColor: AppColors.surfaceLight,
@@ -195,15 +199,15 @@ class _SearchBarState extends State<_SearchBar> {
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide:
-                  const BorderSide(color: AppColors.primaryLight, width: 2),
+              const BorderSide(color: AppColors.primaryLight, width: 2),
             ),
             contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           ),
         ),
 
-        // ── Dropdown suggestions ─────────────────────────────────────────
-        if (vm.showDropdown)
+        // ── Dropdown suggestions with inline loading ─────────────────────
+        if (vm.showDropdown || vm.isSearching)
           Container(
             margin: const EdgeInsets.only(top: 4),
             decoration: BoxDecoration(
@@ -220,79 +224,132 @@ class _SearchBarState extends State<_SearchBar> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: vm.searchResults.map((product) {
-                  final isLast = product == vm.searchResults.last;
-                  return Column(
-                    children: [
-                      InkWell(
-                        onTap: () {
-                          _ctrl.clear();
-                          _focus.unfocus();
-                          vm.addProduct(product);
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(7),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primaryLight.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(Icons.inventory_2_outlined,
-                                    size: 16, color: AppColors.secondaryLight),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(product.name,
-                                        style: AppTextStyles.bodyMedium.copyWith(
-                                          fontWeight: FontWeight.w600,
-                                        )),
-                                    Text('per ${product.unit}',
-                                        style: AppTextStyles.bodySmall.copyWith(
-                                            color: Colors.grey.shade500)),
-                                  ],
-                                ),
-                              ),
-                              Text(
-                                'SAR ${product.marketPrice.toStringAsFixed(2)}',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: Colors.grey.shade500,
-                                  decoration: TextDecoration.lineThrough,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'SAR ${product.corporatePrice.toStringAsFixed(2)}',
-                                style: AppTextStyles.bodySmall.copyWith(
-                                  color: Colors.green.shade600,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (!isLast)
-                        Divider(
-                            height: 1,
-                            color: Colors.grey.shade100,
-                            indent: 16,
-                            endIndent: 16),
-                    ],
-                  );
-                }).toList(),
-              ),
+              child: _buildDropdownContent(vm),
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildDropdownContent(PriceQuotationViewModel vm) {
+    // ✅ Show loading indicator while searching
+    if (vm.isSearching) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.primaryLight,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              'Searching products...',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ✅ Show "No results" if search completed but empty
+    if (vm.searchResults.isEmpty && vm.searchQuery.isNotEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search_off_rounded,
+                size: 18, color: Colors.grey.shade400),
+            const SizedBox(width: 8),
+            Text(
+              'No products found',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // ✅ Show search results
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: vm.searchResults.map((product) {
+        final isLast = product == vm.searchResults.last;
+        return Column(
+          children: [
+            InkWell(
+              onTap: () {
+                _ctrl.clear();
+                _focus.unfocus();
+                vm.addProduct(product);
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: AppColors.primaryLight.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.inventory_2_outlined,
+                          size: 16, color: AppColors.secondaryLight),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(product.name,
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                fontWeight: FontWeight.w600,
+                              )),
+                          Text('per ${product.unit}',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                  color: Colors.grey.shade500)),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      'SAR ${product.marketPrice.toStringAsFixed(2)}',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.grey.shade500,
+                        decoration: TextDecoration.lineThrough,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'SAR ${product.corporatePrice.toStringAsFixed(2)}',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.green.shade600,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (!isLast)
+              Divider(
+                  height: 1,
+                  color: Colors.grey.shade100,
+                  indent: 16,
+                  endIndent: 16),
+          ],
+        );
+      }).toList(),
     );
   }
 }
@@ -700,13 +757,144 @@ class _WalletLine extends StatelessWidget {
 // Cancel + Submit buttons
 // ─────────────────────────────────────────────────────────────────────────────
 
+
 class _ActionButtons extends StatelessWidget {
   final PriceQuotationViewModel vm;
   const _ActionButtons({required this.vm});
 
-  // Show price-out-of-range alert for the first offending item
-  void _showOutOfRangeAlert(BuildContext context, QuotationLineItem item) {
-    showDialog(
+  Future<void> _onSubmit(BuildContext context) async {
+    // ✅ Call API to submit
+    final result = await vm.submitQuotation();
+
+    if (!context.mounted) return;
+
+    if (result != null) {
+      // ✅ Success - Show success dialog with reference number
+      await _showSuccessDialog(context, result);
+
+      // Navigate back after user closes dialog
+      if (context.mounted) {
+        Navigator.pop(context);
+      }
+    } else {
+      // ✅ Error - Check error type
+      final isValidationError = vm.submitError.toLowerCase().contains('price') &&
+          vm.submitError.toLowerCase().contains('range');
+
+      if (isValidationError) {
+        // Show price out of range alert
+        await _showPriceOutOfRangeAlert(context, vm.submitError);
+      } else {
+        // Show general error with retry using AppAlert
+        await AppAlert.apiError(
+          context,
+          errorType: ApiErrorType.unknown,
+          message: vm.submitError,
+          onRetry: () => _onSubmit(context),
+        );
+      }
+
+      vm.resetSubmitStatus();
+    }
+  }
+
+  // ✅ Success Dialog with Reference Number
+  Future<void> _showSuccessDialog(
+      BuildContext context,
+      QuotationSubmitResult result,
+      ) {
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Success icon
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.check_circle_rounded,
+                    size: 40, color: Colors.green.shade600),
+              ),
+              const SizedBox(height: 16),
+
+              Text('Quotation Submitted',
+                  style: AppTextStyles.h3.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.onBackgroundLight,
+                  )),
+              const SizedBox(height: 10),
+
+              Text(
+                result.message,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: Colors.grey.shade600,
+                  height: 1.5,
+                ),
+              ),
+
+              // Reference number
+              if (result.reference.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.backgroundLight,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.receipt_long_outlined,
+                          size: 18, color: AppColors.secondaryLight),
+                      const SizedBox(width: 8),
+                      Text('Reference: ',
+                          style: AppTextStyles.bodySmall.copyWith(
+                              color: Colors.grey.shade600)),
+                      Text(result.reference,
+                          style: AppTextStyles.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.secondaryLight)),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 22),
+
+              // OK button
+              SizedBox(
+                width: double.infinity,
+                child: CustomButton(
+                  text: 'Done',
+                  backgroundColor: Colors.green.shade600,
+                  textColor: Colors.white,
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ✅ Price Out of Range Alert - Allows user to adjust prices
+  Future<void> _showPriceOutOfRangeAlert(
+      BuildContext context,
+      String errorMessage,
+      ) {
+    return showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => Dialog(
@@ -721,11 +909,11 @@ class _ActionButtons extends StatelessWidget {
                 width: 64,
                 height: 64,
                 decoration: BoxDecoration(
-                  color: AppColors.primaryLight.withOpacity(0.15),
+                  color: Colors.orange.shade50,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.warning_amber_rounded,
-                    size: 36, color: AppColors.primaryLight),
+                child: Icon(Icons.warning_amber_rounded,
+                    size: 36, color: Colors.orange.shade600),
               ),
               const SizedBox(height: 16),
 
@@ -736,45 +924,23 @@ class _ActionButtons extends StatelessWidget {
                   )),
               const SizedBox(height: 10),
 
-              RichText(
+              Text(
+                errorMessage,
                 textAlign: TextAlign.center,
-                text: TextSpan(
-                  style: AppTextStyles.bodyMedium
-                      .copyWith(color: Colors.grey.shade600, height: 1.5),
-                  children: [
-                    const TextSpan(text: 'Your offered price for '),
-                    TextSpan(
-                      text: item.product.name,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.onBackgroundLight),
-                    ),
-                    const TextSpan(
-                        text: ' is outside the allowed range. Please '
-                            'adjust the price before submitting.'),
-                  ],
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: Colors.grey.shade600,
+                  height: 1.5,
                 ),
               ),
-              const SizedBox(height: 8),
 
-              // Range hint
-              Container(
-                margin: const EdgeInsets.only(top: 8),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              
-              ),
-              const SizedBox(height: 22),
+              const SizedBox(height: 12),
+
 
               // OK button
               SizedBox(
                 width: double.infinity,
                 child: CustomButton(
-                  text: 'OK, Got it',
+                  text: 'OK, I\'ll Adjust the Price',
                   backgroundColor: AppColors.primaryLight,
                   textColor: AppColors.onPrimaryLight,
                   onPressed: () => Navigator.pop(context),
@@ -787,51 +953,10 @@ class _ActionButtons extends StatelessWidget {
     );
   }
 
-  Future<void> _onSubmit(BuildContext context) async {
-    // Validate price ranges first
-    final invalid = vm.firstInvalidItem;
-    if (invalid != null) {
-      _showOutOfRangeAlert(context, invalid);
-      return;
-    }
-
-    final success = await vm.submitQuotation();
-    if (!context.mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(success
-          ? 'Quotation submitted! Awaiting approval.'
-          : 'Failed to submit. Please try again.'),
-      backgroundColor:
-          success ? Colors.green.shade600 : Colors.redAccent,
-      behavior: SnackBarBehavior.floating,
-    ));
-
-    if (success) Navigator.pop(context);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        // Cancel
-        Expanded(
-          child: OutlinedButton(
-            onPressed: () => Navigator.pop(context),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              side: BorderSide(color: Colors.grey.shade300),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text('Cancel',
-                style: AppTextStyles.bodyMedium.copyWith(
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.w700)),
-          ),
-        ),
-        const SizedBox(width: 12),
-
         // Submit
         Expanded(
           flex: 2,
@@ -840,15 +965,13 @@ class _ActionButtons extends StatelessWidget {
             isLoading: vm.isSubmitting,
             backgroundColor: AppColors.primaryLight,
             textColor: AppColors.onPrimaryLight,
-            onPressed:
-                vm.isSubmitting ? () {} : () => _onSubmit(context),
+            onPressed: vm.isSubmitting ? () {} : () => _onSubmit(context),
           ),
         ),
       ],
     );
   }
 }
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper
 // ─────────────────────────────────────────────────────────────────────────────

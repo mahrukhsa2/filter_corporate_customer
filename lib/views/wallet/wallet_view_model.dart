@@ -1,51 +1,70 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../../data/network/api_response.dart';
+import '../../data/repositories/wallet_repository.dart';
 import '../../models/wallet_model.dart';
+import '../../widgets/app_alert.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Enums
+// lib/views/Wallet/wallet_view_model.dart
+//
+// API coverage:
+//   ✅ GET  /corporate/wallet       → _loadWalletData() / refresh()
+//   🔲 POST /corporate/wallet/topup → processTopUp() — local optimistic for now
+//                                     (see WalletRepository for the stub)
 // ─────────────────────────────────────────────────────────────────────────────
 
 enum WalletLoadStatus { idle, loading, loaded, error }
-enum TopUpStatus { idle, processing, success, error }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ViewModel
-// ─────────────────────────────────────────────────────────────────────────────
+enum TopUpStatus      { idle, processing, success, error }
 
 class WalletViewModel extends ChangeNotifier {
+
   // ── State ─────────────────────────────────────────────────────────────────
-  WalletLoadStatus _loadStatus = WalletLoadStatus.idle;
-  TopUpStatus _topUpStatus = TopUpStatus.idle;
-  
-  double _balance = 0.0;
-  List<WalletTransactionModel> _transactions = [];
-  List<TopUpOptionModel> _topUpOptions = [];
-  List<PaymentMethodModel> _paymentMethods = [];
-  
-  TopUpOptionModel? _selectedTopUpOption;
-  double? _customAmount;
-  String _errorMessage = '';
-  
-  // Tab index for switching between top-up and transaction history
-  int _currentTabIndex = 0;
+  WalletLoadStatus _loadStatus  = WalletLoadStatus.idle;
+  TopUpStatus      _topUpStatus = TopUpStatus.idle;
+
+  WalletSummaryModel? _summary;   // null until first successful load
+  String              _errorMessage = '';
+
+  // Top-up UI state — local config, not from API
+  TopUpOptionModel?  _selectedTopUpOption;
+  double?            _customAmount;
+  int                _currentTabIndex = 0;
 
   // ── Getters ───────────────────────────────────────────────────────────────
-  WalletLoadStatus get loadStatus => _loadStatus;
-  TopUpStatus get topUpStatus => _topUpStatus;
-  
-  double get balance => _balance;
-  List<WalletTransactionModel> get transactions => _transactions;
-  List<TopUpOptionModel> get topUpOptions => _topUpOptions;
-  List<PaymentMethodModel> get paymentMethods => _paymentMethods;
-  
+  WalletLoadStatus get loadStatus  => _loadStatus;
+  TopUpStatus      get topUpStatus => _topUpStatus;
+  String           get errorMessage => _errorMessage;
+  int              get currentTabIndex => _currentTabIndex;
+
+  // Derived from summary — safe defaults when not yet loaded
+  double get balance      => _summary?.balance      ?? 0.0;
+  double get totalTopups  => _summary?.totalTopups  ?? 0.0;
+  double get totalSpent   => _summary?.totalSpent   ?? 0.0;
+  String get currency     => _summary?.currency     ?? 'SAR';
+  List<WalletTransactionModel> get transactions =>
+      _summary?.transactions ?? [];
+
+  // Local config lists — always available, no API dependency
+  List<TopUpOptionModel> get topUpOptions => const [
+    TopUpOptionModel(id: 'o1', amount: 5000),
+    TopUpOptionModel(id: 'o2', amount: 10000),
+    TopUpOptionModel(id: 'o3', amount: 25000),
+    TopUpOptionModel(id: 'o4', amount: 0, isCustom: true),
+  ];
+
+  List<PaymentMethodModel> get paymentMethods => const [
+    PaymentMethodModel(id: 'pm1', name: 'Bank Transfer',          icon: '🏦'),
+    PaymentMethodModel(id: 'pm2', name: 'Credit/Debit Card',      icon: '💳'),
+    PaymentMethodModel(id: 'pm3', name: 'Apple Pay / Google Pay', icon: '📱'),
+  ];
+
   TopUpOptionModel? get selectedTopUpOption => _selectedTopUpOption;
-  double? get customAmount => _customAmount;
-  String get errorMessage => _errorMessage;
-  int get currentTabIndex => _currentTabIndex;
-  
-  bool get isLoading => _loadStatus == WalletLoadStatus.loading;
+  double?           get customAmount        => _customAmount;
+
+  bool get isLoading         => _loadStatus  == WalletLoadStatus.loading;
   bool get isProcessingTopUp => _topUpStatus == TopUpStatus.processing;
-  
+
   bool get canProceedWithTopUp {
     if (_selectedTopUpOption == null) return false;
     if (_selectedTopUpOption!.isCustom) {
@@ -55,213 +74,195 @@ class WalletViewModel extends ChangeNotifier {
   }
 
   WalletViewModel() {
+    debugPrint('[WalletViewModel] created');
     _loadWalletData();
   }
 
-  // ── Load wallet data ──────────────────────────────────────────────────────
-  Future<void> _loadWalletData() async {
+  // ── Load ────────────────────────────────────── GET /corporate/wallet
+
+  Future<void> _loadWalletData({BuildContext? context}) async {
+    debugPrint('[WalletViewModel] _loadWalletData START');
+
     _loadStatus = WalletLoadStatus.loading;
     notifyListeners();
 
-    await Future.delayed(const Duration(milliseconds: 800));
+    final result = await WalletRepository.fetchWallet();
 
-    try {
-      // ── Dummy data – replace with real API call ────────────────────────
-      _balance = 12450.0;
-      
-      _transactions = [
-        WalletTransactionModel(
-          id: 't1',
-          date: DateTime(2026, 2, 12),
-          description: 'Oil Change Invoice',
-          amount: 285.0,
-          type: TransactionType.debit,
-          invoiceNumber: 'INV-7845',
-        ),
-        WalletTransactionModel(
-          id: 't2',
-          date: DateTime(2026, 2, 10),
-          description: 'Wallet Top-up',
-          amount: 10000.0,
-          type: TransactionType.credit,
-        ),
-        WalletTransactionModel(
-          id: 't3',
-          date: DateTime(2026, 2, 5),
-          description: 'Full Service',
-          amount: 2450.0,
-          type: TransactionType.debit,
-          invoiceNumber: 'INV-7820',
-        ),
-        WalletTransactionModel(
-          id: 't4',
-          date: DateTime(2026, 1, 28),
-          description: 'Wallet Top-up',
-          amount: 5000.0,
-          type: TransactionType.credit,
-        ),
-        WalletTransactionModel(
-          id: 't5',
-          date: DateTime(2026, 1, 20),
-          description: 'Tire Rotation',
-          amount: 150.0,
-          type: TransactionType.debit,
-          invoiceNumber: 'INV-7720',
-        ),
-        WalletTransactionModel(
-          id: 't6',
-          date: DateTime(2026, 1, 15),
-          description: 'AC Service',
-          amount: 420.0,
-          type: TransactionType.debit,
-          invoiceNumber: 'INV-7650',
-        ),
-        WalletTransactionModel(
-          id: 't7',
-          date: DateTime(2026, 1, 10),
-          description: 'Wallet Top-up',
-          amount: 3000.0,
-          type: TransactionType.credit,
-        ),
-      ];
-
-      // Sort by date descending (newest first)
-      _transactions.sort((a, b) => b.date.compareTo(a.date));
-
-      _topUpOptions = const [
-        TopUpOptionModel(id: 'o1', amount: 5000),
-        TopUpOptionModel(id: 'o2', amount: 10000),
-        TopUpOptionModel(id: 'o3', amount: 25000),
-        TopUpOptionModel(id: 'o4', amount: 0, isCustom: true),
-      ];
-
-      _paymentMethods = const [
-        PaymentMethodModel(
-          id: 'pm1',
-          name: 'Bank Transfer',
-          icon: '🏦',
-          isAvailable: true,
-        ),
-        PaymentMethodModel(
-          id: 'pm2',
-          name: 'Credit/Debit Card',
-          icon: '💳',
-          isAvailable: true,
-        ),
-        PaymentMethodModel(
-          id: 'pm3',
-          name: 'Apple Pay / Google Pay',
-          icon: '📱',
-          isAvailable: true,
-        ),
-      ];
-
-      _loadStatus = WalletLoadStatus.loaded;
+    if (result.success && result.data != null) {
+      _summary    = result.data;
       _errorMessage = '';
-    } catch (e) {
-      _loadStatus = WalletLoadStatus.error;
-      _errorMessage = 'Failed to load wallet data: ${e.toString()}';
+      _loadStatus = WalletLoadStatus.loaded;
+
+      debugPrint('[WalletViewModel] _loadWalletData SUCCESS: '
+          'balance=${_summary!.balance} '
+          'transactions=${_summary!.transactions.length}');
+    } else {
+      debugPrint('[WalletViewModel] _loadWalletData FAILED: '
+          'errorType=${result.errorType} msg=${result.message}');
+
+      // Keep stale data visible if we already had a load — just show alert
+      _errorMessage = result.message ?? 'Failed to load wallet.';
+      _loadStatus   = _summary != null
+          ? WalletLoadStatus.loaded   // stale but usable
+          : WalletLoadStatus.error;
+
+      if (context != null && context.mounted) {
+        await AppAlert.apiError(
+          context,
+          errorType: result.errorType,
+          message:   result.message,
+          onRetry: result.errorType == ApiErrorType.noInternet ||
+              result.errorType == ApiErrorType.timeout
+              ? () => _loadWalletData(context: context)
+              : null,
+        );
+      }
     }
 
     notifyListeners();
+    debugPrint('[WalletViewModel] _loadWalletData END status=$_loadStatus');
   }
 
-  // ── Refresh ───────────────────────────────────────────────────────────────
-  Future<void> refresh() async {
-    await _loadWalletData();
+  Future<void> refresh({BuildContext? context}) {
+    debugPrint('[WalletViewModel] refresh triggered');
+    return _loadWalletData(context: context);
   }
 
   // ── Tab switching ─────────────────────────────────────────────────────────
+
   void setTabIndex(int index) {
+    debugPrint('[WalletViewModel] setTabIndex: $index');
     _currentTabIndex = index;
     notifyListeners();
   }
 
   // ── Top-up option selection ───────────────────────────────────────────────
+
   void selectTopUpOption(TopUpOptionModel option) {
+    debugPrint('[WalletViewModel] selectTopUpOption: '
+        'id=${option.id} amount=${option.amount} isCustom=${option.isCustom}');
     _selectedTopUpOption = option;
-    if (!option.isCustom) {
-      _customAmount = null;
-    }
+    if (!option.isCustom) _customAmount = null;
     notifyListeners();
   }
 
   void setCustomAmount(String value) {
-    final parsed = double.tryParse(value);
-    _customAmount = parsed;
+    _customAmount = double.tryParse(value);
+    debugPrint('[WalletViewModel] setCustomAmount: raw=$value parsed=$_customAmount');
     notifyListeners();
   }
 
   void clearCustomAmount() {
+    debugPrint('[WalletViewModel] clearCustomAmount');
     _customAmount = null;
     notifyListeners();
   }
 
-  // ── Top-up processing ─────────────────────────────────────────────────────
-  Future<bool> processTopUp(PaymentMethodModel paymentMethod) async {
-    if (!canProceedWithTopUp) return false;
+  // ── Top-up processing ──────────────────────── POST /corporate/wallet/topup
+  // Called from the BankTransferSheet after user confirms payment.
+  // amount is passed explicitly (not read from _selectedTopUpOption) so the
+  // sheet fully controls the value.
 
-    _topUpStatus = TopUpStatus.processing;
+  Future<bool> processTopUp({
+    required double           amount,
+    required PaymentMethodModel paymentMethod,
+    required BuildContext     context,
+  }) async {
+    debugPrint('[WalletViewModel] processTopUp START '
+        'amount=$amount method=${paymentMethod.id}');
+
+    _topUpStatus  = TopUpStatus.processing;
     _errorMessage = '';
     notifyListeners();
 
-    await Future.delayed(const Duration(milliseconds: 1500));
+    final result = await WalletRepository.topUp(
+      amount:          amount,
+      paymentMethodId: paymentMethod.id,
+    );
 
-    try {
-      // ── Dummy top-up – replace with real API call ──────────────────────
-      final amount = _selectedTopUpOption!.isCustom 
-          ? _customAmount! 
-          : _selectedTopUpOption!.amount;
+    if (result.success && result.data != null) {
+      final newBalance = result.data!;
+      debugPrint('[WalletViewModel] processTopUp SUCCESS: newBalance=$newBalance');
 
-      // Add transaction
-      final newTransaction = WalletTransactionModel(
-        id: 't${DateTime.now().millisecondsSinceEpoch}',
-        date: DateTime.now(),
-        description: 'Wallet Top-up',
-        amount: amount,
-        type: TransactionType.credit,
+      // Build a local transaction to show immediately in the history list.
+      // The real transaction will appear on next refresh from the server.
+      final newTx = WalletTransactionModel(
+        id:          'tx_${DateTime.now().millisecondsSinceEpoch}',
+        date:        DateTime.now(),
+        description: 'Wallet Top-up via ${paymentMethod.name}',
+        amount:      amount,
+        type:        TransactionType.credit,
+        status:      'completed',
       );
 
-      _transactions.insert(0, newTransaction);
-      _balance += amount;
+      // Replace balance with server-confirmed value, prepend transaction
+      _summary = _summary != null
+          ? WalletSummaryModel(
+        balance:      newBalance,
+        totalTopups:  (_summary!.totalTopups) + amount,
+        totalSpent:   _summary!.totalSpent,
+        currency:     _summary!.currency,
+        transactions: [newTx, ..._summary!.transactions],
+      )
+          : WalletSummaryModel(
+        balance:      newBalance,
+        totalTopups:  amount,
+        totalSpent:   0,
+        currency:     'SAR',
+        transactions: [newTx],
+      );
 
-      _topUpStatus = TopUpStatus.success;
-      
-      // Reset selections
+      _topUpStatus         = TopUpStatus.success;
       _selectedTopUpOption = null;
-      _customAmount = null;
-      
+      _customAmount        = null;
       notifyListeners();
 
-      // Auto-reset status after delay
+      // Auto-reset after animation
       await Future.delayed(const Duration(seconds: 2));
       _topUpStatus = TopUpStatus.idle;
       notifyListeners();
 
       return true;
-    } catch (e) {
-      _topUpStatus = TopUpStatus.error;
-      _errorMessage = 'Top-up failed: ${e.toString()}';
+    } else {
+      debugPrint('[WalletViewModel] processTopUp FAILED: '
+          'errorType=${result.errorType} msg=${result.message}');
+
+      _errorMessage = result.message ?? 'Top-up failed. Please try again.';
+      _topUpStatus  = TopUpStatus.error;
+      notifyListeners();
+
+      if (context.mounted) {
+        await AppAlert.apiError(
+          context,
+          errorType: result.errorType,
+          message:   result.message,
+          onRetry: result.errorType == ApiErrorType.noInternet ||
+              result.errorType == ApiErrorType.timeout
+              ? () => processTopUp(
+            amount:        amount,
+            paymentMethod: paymentMethod,
+            context:       context,
+          )
+              : null,
+        );
+      }
+
+      _topUpStatus = TopUpStatus.idle;
       notifyListeners();
       return false;
     }
   }
 
-  // ── Get transaction by ID ─────────────────────────────────────────────────
-  WalletTransactionModel? getTransactionById(String id) {
-    try {
-      return _transactions.firstWhere((t) => t.id == id);
-    } catch (e) {
-      return null;
-    }
-  }
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
-  // ── Filter transactions ───────────────────────────────────────────────────
-  List<WalletTransactionModel> getTransactionsByType(TransactionType type) {
-    return _transactions.where((t) => t.type == type).toList();
-  }
+  WalletTransactionModel? getTransactionById(String id) =>
+      _summary?.transactions
+          .cast<WalletTransactionModel?>()
+          .firstWhere((t) => t?.id == id, orElse: () => null);
 
-  List<WalletTransactionModel> getRecentTransactions(int count) {
-    return _transactions.take(count).toList();
-  }
+  List<WalletTransactionModel> getTransactionsByType(TransactionType type) =>
+      transactions.where((t) => t.type == type).toList();
+
+  List<WalletTransactionModel> getRecentTransactions(int count) =>
+      transactions.take(count).toList();
 }

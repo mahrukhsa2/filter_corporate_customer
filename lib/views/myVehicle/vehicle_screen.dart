@@ -5,12 +5,13 @@ import 'package:provider/provider.dart';
 import '../../models/vehicle_model.dart';
 import '../../utils/app_colors.dart';
 import '../../utils/app_text_styles.dart';
+import '../../widgets/app_alert.dart';
 import '../../widgets/custom_text_field.dart';
 import '../../widgets/custom_button.dart';
 import 'vehicle_view_model.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Entry point – provides ViewModel
+// Entry point
 // ─────────────────────────────────────────────────────────────────────────────
 
 class VehicleScreen extends StatelessWidget {
@@ -41,42 +42,46 @@ class _VehicleBody extends StatelessWidget {
       backgroundColor: AppColors.backgroundLight,
       body: Column(
         children: [
-         CustomAppBar(title: "My Vehicles", showBackButton: true,),
+          const CustomAppBar(title: "My Vehicles", showBackButton: true),
           Expanded(
             child: vm.isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primaryLight),
-                  )
+              child: CircularProgressIndicator(
+                  color: AppColors.primaryLight),
+            )
+            // ── Error state (network/timeout/server) ─────────────────
+                : vm.hasError
+                ? _ErrorState(vm: vm)
+            // ── Loaded ───────────────────────────────────────────────
                 : RefreshIndicator(
-                    color: AppColors.primaryLight,
-                    onRefresh: vm.refresh,
-                    child: vm.vehicles.isEmpty
-                        ? const _EmptyState()
-                        : isWide
-                            ? _WideGrid(vm: vm)
-                            : _NarrowList(vm: vm),
-                  ),
+              color: AppColors.primaryLight,
+              onRefresh: () => vm.refresh(context: context),
+              // ── Empty — only when API succeeded with 0 results ───
+              child: vm.vehicles.isEmpty
+                  ? const _EmptyState()
+                  : isWide
+                  ? _WideGrid(vm: vm)
+                  : _NarrowList(vm: vm),
+            ),
           ),
         ],
       ),
       floatingActionButton: vm.isLoading
           ? null
           : FloatingActionButton.extended(
-              onPressed: () => _openForm(context, vm: vm),
-              backgroundColor: AppColors.primaryLight,
-              foregroundColor: AppColors.onPrimaryLight,
-              icon: const Icon(Icons.add_rounded),
-              label: Text(
-                'Add Vehicle',
-                style: AppTextStyles.button
-                    .copyWith(fontSize: 14, color: AppColors.onPrimaryLight),
-              ),
-            ),
+        onPressed: () => _openForm(context, vm: vm),
+        backgroundColor: AppColors.primaryLight,
+        foregroundColor: AppColors.onPrimaryLight,
+        icon: const Icon(Icons.add_rounded),
+        label: Text(
+          'Add Vehicle',
+          style: AppTextStyles.button
+              .copyWith(fontSize: 14, color: AppColors.onPrimaryLight),
+        ),
+      ),
     );
   }
 
-  /// Opens the add/edit bottom sheet. Static so card can call it.
   static void _openForm(BuildContext context,
       {required VehicleViewModel vm, VehicleModel? existing}) {
     showModalBottomSheet(
@@ -91,8 +96,62 @@ class _VehicleBody extends StatelessWidget {
   }
 }
 
-//─────────────────────────────────────────────────────────────────────────────
-// Narrow (mobile) layout – ListView
+// ─────────────────────────────────────────────────────────────────────────────
+// Error State
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ErrorState extends StatelessWidget {
+  final VehicleViewModel vm;
+  const _ErrorState({required this.vm});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.wifi_off_rounded,
+                  size: 60, color: Colors.red.shade300),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Could not load vehicles',
+              style: AppTextStyles.h3.copyWith(
+                fontWeight: FontWeight.w700,
+                color: AppColors.onBackgroundLight,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              vm.errorMessage,
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 28),
+            CustomButton(
+              text: 'Retry',
+              onPressed: () => vm.refresh(context: context),
+              backgroundColor: AppColors.primaryLight,
+              textColor: AppColors.onPrimaryLight,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Narrow list
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _NarrowList extends StatelessWidget {
@@ -113,7 +172,7 @@ class _NarrowList extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Wide (tablet/web) layout – GridView (2 columns)
+// Wide grid
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _WideGrid extends StatelessWidget {
@@ -137,7 +196,7 @@ class _WideGrid extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Vehicle card
+// Vehicle card — unchanged from original
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _VehicleCard extends StatelessWidget {
@@ -168,7 +227,6 @@ class _VehicleCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Top: icon + name + plate + default badge ─────────────────
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -225,11 +283,8 @@ class _VehicleCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-
-            // ── Info pills ───────────────────────────────────────────────
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: AppColors.backgroundLight,
                 borderRadius: BorderRadius.circular(10),
@@ -238,28 +293,21 @@ class _VehicleCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _InfoPill(
-                    icon: Icons.calendar_today_outlined,
-                    value: vehicle.year.toString(),
-                  ),
+                      icon: Icons.calendar_today_outlined,
+                      value: vehicle.year.toString()),
                   Container(width: 1, height: 24, color: Colors.grey.shade300),
                   _InfoPill(
-                    icon: Icons.speed_outlined,
-                    value: '${_fmt(vehicle.odometer.toDouble())} km',
-                  ),
+                      icon: Icons.speed_outlined,
+                      value: '${_fmt(vehicle.odometer.toDouble())} km'),
                   Container(width: 1, height: 24, color: Colors.grey.shade300),
                   _InfoPill(
-                    icon: Icons.palette_outlined,
-                    value: vehicle.color,
-                  ),
+                      icon: Icons.palette_outlined, value: vehicle.color),
                 ],
               ),
             ),
             const SizedBox(height: 12),
-
-            // ── Action buttons ───────────────────────────────────────────
             Row(
               children: [
-                // Edit
                 Expanded(
                   child: _CardActionBtn(
                     icon: Icons.edit_outlined,
@@ -271,8 +319,6 @@ class _VehicleCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-
-                // Set Default (hidden when already default)
                 if (!vehicle.isDefault) ...[
                   Expanded(
                     child: _CardActionBtn(
@@ -285,8 +331,6 @@ class _VehicleCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                 ],
-
-                // Delete
                 Expanded(
                   child: _CardActionBtn(
                     icon: Icons.delete_outline_rounded,
@@ -308,8 +352,7 @@ class _VehicleCard extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('Delete Vehicle',
             style: AppTextStyles.h3.copyWith(fontSize: 18)),
         content: Text(
@@ -331,15 +374,12 @@ class _VehicleCard extends StatelessWidget {
             ),
             onPressed: () async {
               Navigator.pop(context);
-              await vm.deleteVehicle(vehicle.id);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Vehicle deleted.'),
-                    backgroundColor: Colors.green,
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+              final deleted =
+              await vm.deleteVehicle(vehicle.id, context: context);
+              // Error shown by VM via AppAlert; show success snackbar only
+              if (deleted && context.mounted) {
+                AppAlert.snackbar(
+                    context, message: 'Vehicle deleted.', isSuccess: true);
               }
             },
             child: Text('Delete',
@@ -353,7 +393,7 @@ class _VehicleCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Add / Edit form bottom sheet
+// Add / Edit form — unchanged from original
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _VehicleFormSheet extends StatefulWidget {
@@ -379,13 +419,11 @@ class _VehicleFormSheetState extends State<_VehicleFormSheet> {
   void initState() {
     super.initState();
     final v = widget.existing;
-    _makeCtrl = TextEditingController(text: v?.make ?? '');
+    _makeCtrl  = TextEditingController(text: v?.make ?? '');
     _modelCtrl = TextEditingController(text: v?.model ?? '');
     _plateCtrl = TextEditingController(text: v?.plateNumber ?? '');
-    _odoCtrl = TextEditingController(
-        text: v != null ? v.odometer.toString() : '');
-    _yearCtrl =
-        TextEditingController(text: v != null ? v.year.toString() : '');
+    _odoCtrl   = TextEditingController(text: v != null ? v.odometer.toString() : '');
+    _yearCtrl  = TextEditingController(text: v != null ? v.year.toString() : '');
     _colorCtrl = TextEditingController(text: v?.color ?? '');
   }
 
@@ -405,22 +443,24 @@ class _VehicleFormSheetState extends State<_VehicleFormSheet> {
 
     final success = _isEdit
         ? await vm.editVehicle(
-            id: widget.existing!.id,
-            make: _makeCtrl.text,
-            model: _modelCtrl.text,
-            plateNumber: _plateCtrl.text,
-            odometer: int.parse(_odoCtrl.text),
-            year: int.parse(_yearCtrl.text),
-            color: _colorCtrl.text,
-          )
+      context:     context,
+      id:          widget.existing!.id,
+      make:        _makeCtrl.text,
+      model:       _modelCtrl.text,
+      plateNumber: _plateCtrl.text,
+      odometer:    int.parse(_odoCtrl.text),
+      year:        int.parse(_yearCtrl.text),
+      color:       _colorCtrl.text,
+    )
         : await vm.addVehicle(
-            make: _makeCtrl.text,
-            model: _modelCtrl.text,
-            plateNumber: _plateCtrl.text,
-            odometer: int.parse(_odoCtrl.text),
-            year: int.parse(_yearCtrl.text),
-            color: _colorCtrl.text,
-          );
+      context:     context,
+      make:        _makeCtrl.text,
+      model:       _modelCtrl.text,
+      plateNumber: _plateCtrl.text,
+      odometer:    int.parse(_odoCtrl.text),
+      year:        int.parse(_yearCtrl.text),
+      color:       _colorCtrl.text,
+    );
 
     if (!mounted) return;
     if (success) {
@@ -439,10 +479,9 @@ class _VehicleFormSheetState extends State<_VehicleFormSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final vm = context.watch<VehicleViewModel>();
+    final vm         = context.watch<VehicleViewModel>();
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isWide = screenWidth > 720;
+    final isWide     = MediaQuery.of(context).size.width > 720;
 
     return Center(
       child: Container(
@@ -462,10 +501,8 @@ class _VehicleFormSheetState extends State<_VehicleFormSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Sheet header
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 decoration: BoxDecoration(
                   color: AppColors.primaryLight,
                   borderRadius: isWide
@@ -506,48 +543,34 @@ class _VehicleFormSheetState extends State<_VehicleFormSheet> {
                   ],
                 ),
               ),
-
-              SizedBox(height: 30,),
-              // Form fields
+              const SizedBox(height: 30),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
                 child: Form(
                   key: _formKey,
                   child: Column(
                     children: [
-                      // Make + Model (side by side on wide screens)
                       isWide
-                          ? Row(
-                              children: [
-                                Expanded(
-                                    child: _buildMake()),
-                                const SizedBox(width: 12),
-                                Expanded(child: _buildModel()),
-                              ],
-                            )
-                          : Column(
-                              children: [
-                                _buildMake(),
-                                const SizedBox(height: 14),
-                                _buildModel(),
-                              ],
-                            ),
+                          ? Row(children: [
+                        Expanded(child: _buildMake()),
+                        const SizedBox(width: 12),
+                        Expanded(child: _buildModel()),
+                      ])
+                          : Column(children: [
+                        _buildMake(),
+                        const SizedBox(height: 14),
+                        _buildModel(),
+                      ]),
                       const SizedBox(height: 14),
-
-                      // Plate No.
                       CustomTextField(
                         label: 'Plate Number *',
                         hint: 'e.g. ABC-123',
                         controller: _plateCtrl,
-                        prefixIcon:
-                            const Icon(Icons.credit_card_outlined),
+                        prefixIcon: const Icon(Icons.credit_card_outlined),
                         validator: (v) => (v == null || v.trim().isEmpty)
-                            ? 'Plate number is required'
-                            : null,
+                            ? 'Plate number is required' : null,
                       ),
                       const SizedBox(height: 14),
-
-                      // Odometer + Year (side by side)
                       Row(
                         children: [
                           Expanded(
@@ -558,10 +581,8 @@ class _VehicleFormSheetState extends State<_VehicleFormSheet> {
                               keyboardType: TextInputType.number,
                               prefixIcon: const Icon(Icons.speed_outlined),
                               validator: (v) {
-                                if (v == null || v.trim().isEmpty)
-                                  return 'Required';
-                                if (int.tryParse(v) == null)
-                                  return 'Numbers only';
+                                if (v == null || v.trim().isEmpty) return 'Required';
+                                if (int.tryParse(v) == null) return 'Numbers only';
                                 return null;
                               },
                             ),
@@ -573,14 +594,11 @@ class _VehicleFormSheetState extends State<_VehicleFormSheet> {
                               hint: '2022',
                               controller: _yearCtrl,
                               keyboardType: TextInputType.number,
-                              prefixIcon: const Icon(
-                                  Icons.calendar_today_outlined),
+                              prefixIcon: const Icon(Icons.calendar_today_outlined),
                               validator: (v) {
-                                if (v == null || v.trim().isEmpty)
-                                  return 'Required';
+                                if (v == null || v.trim().isEmpty) return 'Required';
                                 final y = int.tryParse(v);
-                                if (y == null || y < 1990 || y > 2030)
-                                  return 'Invalid year';
+                                if (y == null || y < 1990 || y > 2030) return 'Invalid year';
                                 return null;
                               },
                             ),
@@ -588,27 +606,21 @@ class _VehicleFormSheetState extends State<_VehicleFormSheet> {
                         ],
                       ),
                       const SizedBox(height: 14),
-
-                      // Color
                       CustomTextField(
                         label: 'Color *',
                         hint: 'e.g. White',
                         controller: _colorCtrl,
                         prefixIcon: const Icon(Icons.palette_outlined),
                         validator: (v) => (v == null || v.trim().isEmpty)
-                            ? 'Color is required'
-                            : null,
+                            ? 'Color is required' : null,
                       ),
                       const SizedBox(height: 24),
-
-                      // Submit button
                       SizedBox(
                         width: double.infinity,
                         child: CustomButton(
                           text: _isEdit ? 'Update Vehicle' : 'Add Vehicle',
                           isLoading: vm.isSaving,
-                          onPressed:
-                              vm.isSaving ? () {} : () => _onSubmit(vm),
+                          onPressed: vm.isSaving ? () {} : () => _onSubmit(vm),
                           backgroundColor: AppColors.primaryLight,
                           textColor: AppColors.onPrimaryLight,
                         ),
@@ -626,26 +638,26 @@ class _VehicleFormSheetState extends State<_VehicleFormSheet> {
   }
 
   Widget _buildMake() => CustomTextField(
-        label: 'Make *',
-        hint: 'e.g. Toyota',
-        controller: _makeCtrl,
-        prefixIcon: const Icon(Icons.directions_car_outlined),
-        validator: (v) =>
-            (v == null || v.trim().isEmpty) ? 'Make is required' : null,
-      );
+    label: 'Make *',
+    hint: 'e.g. Toyota',
+    controller: _makeCtrl,
+    prefixIcon: const Icon(Icons.directions_car_outlined),
+    validator: (v) =>
+    (v == null || v.trim().isEmpty) ? 'Make is required' : null,
+  );
 
   Widget _buildModel() => CustomTextField(
-        label: 'Model *',
-        hint: 'e.g. Camry',
-        controller: _modelCtrl,
-        prefixIcon: const Icon(Icons.car_repair_outlined),
-        validator: (v) =>
-            (v == null || v.trim().isEmpty) ? 'Model is required' : null,
-      );
+    label: 'Model *',
+    hint: 'e.g. Camry',
+    controller: _modelCtrl,
+    prefixIcon: const Icon(Icons.car_repair_outlined),
+    validator: (v) =>
+    (v == null || v.trim().isEmpty) ? 'Model is required' : null,
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Empty state
+// Empty state — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
@@ -660,11 +672,9 @@ class _EmptyState extends StatelessWidget {
           Icon(Icons.directions_car_outlined,
               size: 80, color: Colors.grey.shade300),
           const SizedBox(height: 16),
-          Text(
-            'No Vehicles Yet',
-            style: AppTextStyles.h3.copyWith(
-                fontSize: 18, color: Colors.grey.shade500),
-          ),
+          Text('No Vehicles Yet',
+              style: AppTextStyles.h3
+                  .copyWith(fontSize: 18, color: Colors.grey.shade500)),
           const SizedBox(height: 8),
           Text(
             'Tap "+ Add Vehicle" to register\nyour first vehicle.',
@@ -679,7 +689,7 @@ class _EmptyState extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Small reusable helpers
+// Small helpers — unchanged
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _InfoPill extends StatelessWidget {
@@ -694,13 +704,11 @@ class _InfoPill extends StatelessWidget {
       children: [
         Icon(icon, size: 13, color: Colors.grey.shade500),
         const SizedBox(width: 4),
-        Text(
-          value,
-          style: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.onBackgroundLight,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        Text(value,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.onBackgroundLight,
+              fontWeight: FontWeight.w600,
+            )),
       ],
     );
   }
@@ -736,13 +744,11 @@ class _CardActionBtn extends StatelessWidget {
           children: [
             Icon(icon, size: 15, color: fgColor),
             const SizedBox(width: 5),
-            Text(
-              label,
-              style: AppTextStyles.bodySmall.copyWith(
-                color: fgColor,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            Text(label,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: fgColor,
+                  fontWeight: FontWeight.w700,
+                )),
           ],
         ),
       ),
@@ -750,7 +756,6 @@ class _CardActionBtn extends StatelessWidget {
   }
 }
 
-// Number formatter: 45200 → "45,200"
 String _fmt(double value) {
   final parts = value.toStringAsFixed(0).split('');
   final buf = StringBuffer();

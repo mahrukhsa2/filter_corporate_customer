@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:filter_corporate_customer/widgets/custom_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../models/payment_model.dart';
 import '../../utils/app_colors.dart';
@@ -24,17 +26,37 @@ class MakePaymentScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Also support receiving args via Navigator route
     final args =
-        ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
-    final amount = totalAmount ?? (args?['totalAmount'] as double?) ?? 48750;
-    final ref = invoiceRef ??
-        (args?['invoiceRef'] as String?) ??
-        'Billing';
+    ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+
+    // Display fields
+    final amount = totalAmount ?? (args?['totalAmount'] as double?) ?? 0.0;
+    final ref    = invoiceRef  ?? (args?['invoiceRef']  as String?) ?? 'Service Booking';
+
+    // Booking context — passed from booking screen, required for payment API body
+    final branchId      = (args?['branchId']      as String?) ?? '';
+    final vehicleId     = (args?['vehicleId']      as String?) ?? '';
+    final departmentId  = (args?['departmentId']   as String?) ?? '';
+    final notes         = (args?['notes']          as String?) ?? '';
+    final payFromWallet = (args?['payFromWallet']  as bool?)   ?? false;
+    final bookedForRaw  =  args?['bookedFor'];
+    final bookedFor     = bookedForRaw is DateTime
+        ? bookedForRaw
+        : (bookedForRaw is String
+        ? DateTime.tryParse(bookedForRaw) ?? DateTime.now()
+        : DateTime.now());
 
     return ChangeNotifierProvider(
-      create: (_) =>
-          MakePaymentViewModel(totalAmount: amount, invoiceRef: ref),
+      create: (_) => MakePaymentViewModel(
+        totalAmount:          amount,
+        invoiceRef:           ref,
+        branchId:             branchId,
+        vehicleId:            vehicleId,
+        departmentId:         departmentId,
+        bookedFor:            bookedFor,
+        notes:                notes,
+        initialPayFromWallet: payFromWallet,
+      ),
       child: const _PaymentBody(),
     );
   }
@@ -60,13 +82,13 @@ class _PaymentBody extends StatelessWidget {
           Expanded(
             child: vm.isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primaryLight))
-                : vm.isSuccess
-                    ? _ReceiptView(vm: vm)
-                    : isWide
-                        ? _WideLayout(vm: vm)
-                        : _NarrowLayout(vm: vm),
+                child: CircularProgressIndicator(
+                    color: AppColors.primaryLight))
+                : (vm.isSuccess || vm.isSkipped)
+                ? _ReceiptView(vm: vm)
+                : isWide
+                ? _WideLayout(vm: vm)
+                : _NarrowLayout(vm: vm),
           ),
         ],
       ),
@@ -143,6 +165,7 @@ class _WideLayout extends StatelessWidget {
                 _PaymentBreakdown(vm: vm),
                 const SizedBox(height: 24),
                 _ConfirmButton(vm: vm),
+
               ],
             ),
           ),
@@ -259,24 +282,37 @@ class _PaymentMethodSection extends StatelessWidget {
           final isSelected = vm.selectedMethod == method;
           final isWalletAndInsufficient = method == PaymentMethod.wallet &&
               (vm.summary?.walletBalance ?? 0) < (vm.summary?.totalAmount ?? 0);
+          final isDisabled  = method == PaymentMethod.onlineCard;
+          final isMonthly   = method == PaymentMethod.payMonthly;
 
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: GestureDetector(
-              onTap: () => vm.selectMethod(method),
+              onTap: isDisabled
+                  ? null
+                  : isMonthly
+                  ? () async {
+                // Select it visually first
+                vm.selectMethod(method);
+              }
+                  : () => vm.selectMethod(method),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: isSelected
+                  color: isDisabled
+                      ? Colors.grey.shade50
+                      : isSelected
                       ? AppColors.primaryLight.withOpacity(0.12)
                       : AppColors.backgroundLight,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: isSelected
+                    color: isDisabled
+                        ? Colors.grey.shade200
+                        : isSelected
                         ? AppColors.primaryLight
                         : Colors.grey.shade200,
-                    width: isSelected ? 2 : 1,
+                    width: isSelected && !isDisabled ? 2 : 1,
                   ),
                 ),
                 child: Row(
@@ -335,6 +371,16 @@ class _PaymentMethodSection extends StatelessWidget {
                                         ),
                                       ),
 
+                                    if (isDisabled)
+                                      Padding(
+                                        padding: const EdgeInsets.only(bottom: 4),
+                                        child: _Badge(
+                                          label: 'Coming Soon',
+                                          bg: Colors.grey.shade200,
+                                          text: Colors.grey.shade600,
+                                        ),
+                                      ),
+
                                     if (isWalletAndInsufficient)
                                       Padding(
                                         padding: const EdgeInsets.only(bottom: 4),
@@ -378,7 +424,7 @@ class _PaymentMethodSection extends StatelessWidget {
                       ),
                       child: isSelected
                           ? const Icon(Icons.check_rounded,
-                          size: 13, color: AppColors.onPrimaryLight)
+                          size: 13, color: Colors.white)
                           : null,
                     ),
                   ],
@@ -401,6 +447,8 @@ class _PaymentMethodSection extends StatelessWidget {
         return Icons.credit_card_outlined;
       case PaymentMethod.cashAtBranch:
         return Icons.store_outlined;
+      case PaymentMethod.payMonthly:
+        return Icons.receipt_long;
     }
   }
 }
@@ -520,7 +568,7 @@ class _WalletTopUpSectionState extends State<_WalletTopUpSection> {
             TextFormField(
               controller: _ctrl,
               keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(
                     RegExp(r'^\d+\.?\d{0,2}'))
@@ -755,36 +803,246 @@ class _IBANRow extends StatelessWidget {
 // Confirm button
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _ConfirmButton extends StatelessWidget {
+class _ConfirmButton extends StatefulWidget {
   final MakePaymentViewModel vm;
   const _ConfirmButton({required this.vm});
 
   @override
+  State<_ConfirmButton> createState() => _ConfirmButtonState();
+}
+
+class _ConfirmButtonState extends State<_ConfirmButton> {
+  // Payment proof — picked from gallery via image_picker
+  File?   _proofFile;
+  String? _proofFileName;
+
+  Future<void> _pickProof() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1920,
+      );
+      if (picked == null) return;
+      setState(() {
+        _proofFile     = File(picked.path);
+        _proofFileName = picked.name;
+      });
+    } catch (e) {
+      debugPrint('[PaymentScreen] image pick error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open gallery: $e'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  void _removeProof() => setState(() {
+    _proofFile     = null;
+    _proofFileName = null;
+  });
+
+  bool get _proofRequired =>
+      widget.vm.selectedMethod == PaymentMethod.bankTransfer;
+
+  bool get _canConfirm =>
+      widget.vm.canConfirm && (!_proofRequired || _proofFile != null);
+
+  @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: CustomButton(
-        text: 'Confirm Payment',
-        isLoading: vm.isProcessing,
-        backgroundColor: AppColors.primaryLight,
-        textColor: AppColors.onPrimaryLight,
-        onPressed: vm.isProcessing
-            ? () {}
-            : () async {
-                final ok = await vm.confirmPayment();
-                if (!context.mounted) return;
-                if (!ok) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(vm.errorMessage.isEmpty
-                          ? 'Payment failed. Please try again.'
-                          : vm.errorMessage),
-                      backgroundColor: Colors.redAccent,
-                      behavior: SnackBarBehavior.floating,
+    final vm = widget.vm;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── Proof upload (bank transfer only) ──────────────────────────────
+        if (_proofRequired) ...[
+          _ProofUploadCard(
+            file:       _proofFile,
+            fileName:   _proofFileName,
+            onPick:     _pickProof,
+            onRemove:   _removeProof,
+          ),
+          const SizedBox(height: 12),
+        ],
+
+        // ── Confirm button ────────────────────────────────────────────────
+        SizedBox(
+          width: double.infinity,
+          child: CustomButton(
+            text: vm.selectedMethod == PaymentMethod.payMonthly
+                ? 'Place Order (Pay Monthly)'
+                : 'Confirm Payment',
+            isLoading: vm.isProcessing,
+            backgroundColor: _canConfirm
+                ? AppColors.primaryLight
+                : Colors.grey.shade300,
+            textColor: _canConfirm
+                ? AppColors.onPrimaryLight
+                : Colors.grey.shade500,
+            onPressed: vm.isProcessing || !_canConfirm
+                ? () {}
+                : () async {
+              if (vm.selectedMethod == PaymentMethod.payMonthly) {
+                // skipPayment sets isSkipped=true → _ReceiptView renders
+                // the order confirmation screen. No navigation here.
+                await vm.skipPayment(context: context);
+              } else {
+                await vm.confirmPayment(context: context);
+              }
+            },
+          ),
+        ),
+
+        // ── Hint if proof missing ─────────────────────────────────────────
+        if (_proofRequired && _proofFileName == null) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.info_outline_rounded,
+                  size: 13, color: Colors.orange.shade600),
+              const SizedBox(width: 5),
+              Text(
+                'Please attach your payment proof to continue',
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: Colors.orange.shade600, fontSize: 11),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Proof upload card
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ProofUploadCard extends StatelessWidget {
+  final File?        file;
+  final String?      fileName;
+  final VoidCallback onPick;
+  final VoidCallback onRemove;
+  const _ProofUploadCard({
+    required this.file,
+    required this.fileName,
+    required this.onPick,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasFile = file != null;
+    return GestureDetector(
+      onTap: hasFile ? null : onPick,
+      child: Container(
+        decoration: BoxDecoration(
+          color: hasFile ? Colors.green.shade50 : Colors.blue.shade50,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: hasFile ? Colors.green.shade300 : Colors.blue.shade200,
+            width: hasFile ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Header row ───────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: hasFile
+                          ? Colors.green.shade100
+                          : Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                  );
-                }
-              },
+                    child: Icon(
+                      hasFile
+                          ? Icons.check_circle_outline_rounded
+                          : Icons.upload_file_outlined,
+                      size: 18,
+                      color: hasFile
+                          ? Colors.green.shade700
+                          : Colors.blue.shade700,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          hasFile ? 'Proof Attached' : 'Attach Payment Proof *',
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: hasFile
+                                ? Colors.green.shade700
+                                : Colors.blue.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          hasFile
+                              ? fileName!
+                              : 'Tap to upload screenshot or receipt',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: hasFile
+                                ? Colors.green.shade600
+                                : Colors.blue.shade500,
+                            fontSize: 11,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (hasFile)
+                    GestureDetector(
+                      onTap: onRemove,
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.close_rounded,
+                            size: 14, color: Colors.red.shade400),
+                      ),
+                    )
+                  else
+                    Icon(Icons.arrow_forward_ios_rounded,
+                        size: 13, color: Colors.blue.shade400),
+                ],
+              ),
+            ),
+
+            // ── Image thumbnail preview ───────────────────────────────────
+            if (hasFile) ...[
+              const Divider(height: 1, color: Color(0xFFD0EED4)),
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                    bottom: Radius.circular(13)),
+                child: Image.file(
+                  file!,
+                  height: 160,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -801,14 +1059,185 @@ class _ReceiptView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final r = vm.receipt!;
+    if (r.isMonthlyBilling) return _MonthlyOrderConfirmation(receipt: r);
+    return _PaymentReceipt(receipt: r);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Monthly billing — order placed confirmation
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _MonthlyOrderConfirmation extends StatelessWidget {
+  final PaymentReceiptModel receipt;
+  const _MonthlyOrderConfirmation({required this.receipt});
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 48, 24, 40),
+      child: Column(
+        children: [
+          // ── Icon ────────────────────────────────────────────────────────
+          Container(
+            width: 100, height: 100,
+            decoration: BoxDecoration(
+              color: AppColors.primaryLight.withOpacity(0.15),
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.primaryLight, width: 3),
+            ),
+            child: const Icon(Icons.pending_actions_rounded,
+                size: 52, color: AppColors.secondaryLight),
+          ),
+          const SizedBox(height: 24),
+
+          Text('Order Placed!',
+              style: AppTextStyles.h1.copyWith(
+                  color: AppColors.onBackgroundLight,
+                  fontWeight: FontWeight.w800)),
+          const SizedBox(height: 10),
+          Text(
+            'Your order has been placed successfully.\nWaiting for approval.',
+            style: AppTextStyles.bodyMedium
+                .copyWith(color: Colors.grey.shade600),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 32),
+
+          // ── Order details card ───────────────────────────────────────────
+          Container(
+            width: double.infinity,
+            constraints: const BoxConstraints(maxWidth: 480),
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4)),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Card header
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.receipt_long_rounded,
+                        size: 20, color: AppColors.secondaryLight),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text('Order Details',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.onBackgroundLight)),
+                  ),
+                  // Pending approval badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.schedule_rounded,
+                          size: 12, color: AppColors.secondaryLight),
+                      const SizedBox(width: 4),
+                      Text('Pending Approval',
+                          style: AppTextStyles.caption.copyWith(
+                              color: AppColors.secondaryLight,
+                              fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                ]),
+                const SizedBox(height: 16),
+                const Divider(height: 1, color: Color(0xFFF0F0F0)),
+                const SizedBox(height: 16),
+
+                _ReceiptRow('Payment Method', 'Monthly Billing'),
+                _ReceiptRow('Billing Cycle',  'Added to current month'),
+                _ReceiptRow('Submitted At',   _formatDt(receipt.timestamp)),
+
+                const SizedBox(height: 16),
+
+                // Info box
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryLight.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: AppColors.primaryLight.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.info_outline_rounded,
+                          size: 16, color: AppColors.secondaryLight),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Your order is awaiting approval from Filter. '
+                              'You will be notified once confirmed. '
+                              'The amount will be added to your monthly billing statement.',
+                          style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.secondaryLight,
+                              fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 28),
+
+          // ── Back to Home ─────────────────────────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            child: CustomButton(
+              text: 'Back to Home',
+              onPressed: () => Navigator.pushNamedAndRemoveUntil(
+                  context, '/home', (r) => false),
+              backgroundColor: AppColors.primaryLight,
+              textColor: AppColors.onPrimaryLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regular payment — receipt screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PaymentReceipt extends StatelessWidget {
+  final PaymentReceiptModel receipt;
+  const _PaymentReceipt({required this.receipt});
+
+  @override
+  Widget build(BuildContext context) {
+    final r = receipt;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
       child: Column(
         children: [
-          // Success icon
+          // ── Success icon ──────────────────────────────────────────────────
           Container(
-            width: 90,
-            height: 90,
+            width: 90, height: 90,
             decoration: BoxDecoration(
               color: Colors.green.shade50,
               shape: BoxShape.circle,
@@ -823,12 +1252,12 @@ class _ReceiptView extends StatelessWidget {
                   .copyWith(color: AppColors.onBackgroundLight)),
           const SizedBox(height: 6),
           Text('Your payment has been processed successfully.',
-              style: AppTextStyles.bodyMedium.copyWith(
-                  color: Colors.grey.shade500),
+              style: AppTextStyles.bodyMedium
+                  .copyWith(color: Colors.grey.shade500),
               textAlign: TextAlign.center),
           const SizedBox(height: 32),
 
-          // Receipt card
+          // ── Receipt card ──────────────────────────────────────────────────
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(20),
@@ -838,66 +1267,59 @@ class _ReceiptView extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.07),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
+                    color: Colors.black.withOpacity(0.07),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4)),
               ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryLight.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.receipt_long_rounded,
-                          size: 20, color: AppColors.secondaryLight),
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text('Payment Receipt',
-                          style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.onBackgroundLight)),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                          color: Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(20)),
-                      child: Text(r.status,
-                          style: AppTextStyles.bodySmall.copyWith(
-                              color: Colors.green.shade700,
-                              fontWeight: FontWeight.w700)),
-                    ),
-                  ],
-                ),
+                    child: const Icon(Icons.receipt_long_rounded,
+                        size: 20, color: AppColors.secondaryLight),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text('Payment Receipt',
+                        style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.onBackgroundLight)),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text(r.status,
+                        style: AppTextStyles.bodySmall.copyWith(
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.w700)),
+                  ),
+                ]),
                 const SizedBox(height: 16),
                 const Divider(height: 1, color: Color(0xFFF0F0F0)),
                 const SizedBox(height: 16),
-                _ReceiptRow('Receipt #', r.receiptNumber),
+                _ReceiptRow('Receipt #',      r.receiptNumber),
                 _ReceiptRow('Payment Method', r.method),
-                _ReceiptRow('Amount Paid', 'SAR ${_fmt(r.amountPaid)}'),
+                _ReceiptRow('Amount Paid',    'SAR ${_fmt(r.amountPaid)}'),
                 if (r.walletUsed > 0)
-                  _ReceiptRow(
-                      'Wallet Used', 'SAR ${_fmt(r.walletUsed)}'),
-                _ReceiptRow('Date & Time', _formatDt(r.timestamp)),
+                  _ReceiptRow('Wallet Used',  'SAR ${_fmt(r.walletUsed)}'),
+                _ReceiptRow('Date & Time',    _formatDt(r.timestamp)),
                 const SizedBox(height: 20),
-
-                // Back to billing button
                 SizedBox(
                   width: double.infinity,
                   child: CustomButton(
-                    text: 'Back to Billing',
-                    onPressed: () =>
-                        Navigator.popUntil(context, (r) => r.isFirst),
+                    text: 'Back to Home',
+                    onPressed: () => Navigator.pushNamedAndRemoveUntil(
+                        context, '/', (r) => false),
                     backgroundColor: AppColors.primaryLight,
                     textColor: AppColors.onPrimaryLight,
                   ),
@@ -1018,6 +1440,8 @@ class _Badge extends StatelessWidget {
     );
   }
 }
+
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

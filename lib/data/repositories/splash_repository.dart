@@ -5,7 +5,12 @@ import '../app_cache.dart';
 // lib/data/repositories/splash_repository.dart
 //
 // Orchestrates everything loaded before the user sees any screen.
-// SplashScreen calls loadSessionState() and loadDropdowns() in parallel.
+// SplashScreen calls loadSessionState() first, then loadDropdowns().
+// They must NOT run in parallel — loadDropdowns needs cachedIsLoggedIn.
+//
+// FETCH LOGIC:
+// - Branches: Fetched for ALL users (logged in or not)
+// - Referrals: Fetched ONLY for non-logged-in users (registration flow)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class SplashRepository {
@@ -30,15 +35,12 @@ class SplashRepository {
   }
 
   // ── 2. Lookup / dropdown data ─────────────────────────────────────────────
-  // AppCache.init() fetches branches + departments (and any future lookups)
-  // concurrently. Results sit in memory — ViewModels read them instantly.
-  //
-  // Skipped when user is not logged in because the endpoints require auth.
-  // AppCache.init() is called again from LoginViewModel after a successful
-  // login so the cache is warm before the home screen loads.
+  // MUST be called after loadSessionState() so cachedIsLoggedIn is correct.
+  // Logged-in  → fetches profile (allowed branches) + public branches
+  // Logged-out → fetches public branches + referrals (registration flow)
 
   static Future<void> loadDropdowns() async {
-    if (!cachedIsLoggedIn) return;
-    await AppCache.init();
+    // cachedIsLoggedIn is set by loadSessionState() — call that first.
+    await AppCache.init(isLoggedIn: cachedIsLoggedIn);
   }
 }

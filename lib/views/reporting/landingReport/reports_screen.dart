@@ -6,6 +6,7 @@ import '../../../models/reports_model.dart';
 import '../../../utils/app_colors.dart';
 import '../../../utils/app_text_styles.dart';
 import '../../../widgets/custom_button.dart';
+import '../../../widgets/summary_stat_card.dart';
 import 'reports_view_model.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,10 +25,6 @@ class ReportsScreen extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Body
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _ReportsBody extends StatelessWidget {
   const _ReportsBody();
 
@@ -40,29 +37,25 @@ class _ReportsBody extends StatelessWidget {
       backgroundColor: AppColors.backgroundLight,
       body: Column(
         children: [
-          CustomAppBar(title: "Reports", showBackButton: true,),
+          CustomAppBar(title: "Reports", showBackButton: true),
           Expanded(
             child: vm.isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primaryLight))
+                child: CircularProgressIndicator(
+                    color: AppColors.primaryLight))
                 : RefreshIndicator(
-                    color: AppColors.primaryLight,
-                    onRefresh: vm.refresh,
-                    child: isWide
-                        ? _WideLayout(vm: vm)
-                        : _NarrowLayout(vm: vm),
-                  ),
+              color: AppColors.primaryLight,
+              onRefresh: () => vm.refresh(context: context),
+              child: isWide
+                  ? _WideLayout(vm: vm)
+                  : _NarrowLayout(vm: vm),
+            ),
           ),
         ],
       ),
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Layouts
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _NarrowLayout extends StatelessWidget {
   final ReportsViewModel vm;
@@ -114,11 +107,6 @@ class _WideLayout extends StatelessWidget {
     );
   }
 }
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Export PDF / Excel popup menu
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _ExportMenu extends StatelessWidget {
   final ReportsViewModel vm;
@@ -197,10 +185,6 @@ class _ExportMenu extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Summary cards — 2×2 on mobile, 4-in-a-row on wide
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _SummaryCards extends StatelessWidget {
   final ReportsSummary summary;
   const _SummaryCards({required this.summary});
@@ -208,155 +192,75 @@ class _SummaryCards extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width > 720;
+
     final cards = [
-      _SummaryCardData(
-        title: 'Total Spent',
-        subtitle: 'This Year',
-        value: 'SAR ${_fmt(summary.totalSpentThisYear)}',
-        icon: Icons.account_balance_wallet_outlined,
-        color: AppColors.secondaryLight,
-        bgColor: AppColors.secondaryLight.withOpacity(0.08),
+      SummaryStatCard(
+        title:      'Total Spent',
+        subtitle:   'This Year',
+        value:      'SAR ${_fmt(summary.totalSpentThisYear)}',
+        icon:       Icons.account_balance_wallet_outlined,
+        iconColor:  AppColors.secondaryLight,
+        iconBgColor: AppColors.secondaryLight.withOpacity(0.08),
       ),
-      _SummaryCardData(
-        title: 'This Month',
-        subtitle: '${summary.thisMonthInvoices} Invoices',
-        value: 'SAR ${_fmt(summary.thisMonthAmount)}',
-        icon: Icons.receipt_long_outlined,
-        color: Colors.blue.shade700,
-        bgColor: Colors.blue.shade50,
+      SummaryStatCard(
+        title:      'This Month',
+        subtitle:   '${summary.thisMonthInvoices} Invoices',
+        value:      'SAR ${_fmt(summary.thisMonthAmount)}',
+        icon:       Icons.receipt_long_outlined,
+        iconColor:  Colors.blue.shade700,
+        iconBgColor: Colors.blue.shade50,
       ),
-      _SummaryCardData(
-        title: 'Total Savings',
-        subtitle: '(${summary.savingsPercent}%)',
-        value: 'SAR ${_fmt(summary.totalSavings)}',
-        icon: Icons.savings_outlined,
-        color: Colors.green.shade700,
-        bgColor: Colors.green.shade50,
+      SummaryStatCard(
+        title:      'Total Savings',
+        subtitle:   '(${summary.savingsPercent}%)',
+        value:      'SAR ${_fmt(summary.totalSavings)}',
+        icon:       Icons.savings_outlined,
+        iconColor:  Colors.green.shade700,
+        iconBgColor: Colors.green.shade50,
       ),
-      _SummaryCardData(
-        title: 'Wallet Used',
-        subtitle: '(${summary.walletUsedPercent.toInt()}% of total)',
-        value: 'SAR ${_fmt(summary.walletUsed)}',
-        icon: Icons.account_balance_outlined,
-        color: Colors.purple.shade700,
-        bgColor: Colors.purple.shade50,
+      SummaryStatCard(
+        title:      'Wallet Used',
+        subtitle:   '(${summary.walletUsedPercent.toInt()}% of total)',
+        value:      'SAR ${_fmt(summary.walletUsed)}',
+        icon:       Icons.account_balance_outlined,
+        iconColor:  Colors.purple.shade700,
+        iconBgColor: Colors.purple.shade50,
       ),
     ];
 
     if (isWide) {
       return Row(
         children: cards
-            .map((c) => Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: _SummaryCard(data: c),
-                  ),
-                ))
-            .toList()
-          ..last = Expanded(child: _SummaryCard(data: cards.last)),
+            .asMap()
+            .entries
+            .map((e) => Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(
+                right: e.key < cards.length - 1 ? 12 : 0),
+            child: e.value,
+          ),
+        ))
+            .toList(),
       );
     }
 
-    // Mobile: 2×2 grid
     return Column(
       children: [
         Row(children: [
-          Expanded(child: _SummaryCard(data: cards[0])),
+          Expanded(child: cards[0]),
           const SizedBox(width: 12),
-          Expanded(child: _SummaryCard(data: cards[1])),
+          Expanded(child: cards[1]),
         ]),
         const SizedBox(height: 12),
         Row(children: [
-          Expanded(child: _SummaryCard(data: cards[2])),
+          Expanded(child: cards[2]),
           const SizedBox(width: 12),
-          Expanded(child: _SummaryCard(data: cards[3])),
+          Expanded(child: cards[3]),
         ]),
       ],
     );
   }
 }
-
-class _SummaryCardData {
-  final String title;
-  final String subtitle;
-  final String value;
-  final IconData icon;
-  final Color color;
-  final Color bgColor;
-  const _SummaryCardData({
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.icon,
-    required this.color,
-    required this.bgColor,
-  });
-}
-
-class _SummaryCard extends StatelessWidget {
-  final _SummaryCardData data;
-  const _SummaryCard({required this.data});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceLight,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Icon + title row
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: data.bgColor,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(data.icon, size: 18, color: data.color),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(data.title,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.onBackgroundLight,
-                    ),
-                    overflow: TextOverflow.ellipsis),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(data.value,
-              style: AppTextStyles.h3.copyWith(
-                color: data.color,
-                fontWeight: FontWeight.w800,
-                fontSize: 18,
-              )),
-          const SizedBox(height: 4),
-          Text(data.subtitle,
-              style: AppTextStyles.bodySmall
-                  .copyWith(color: Colors.grey.shade500)),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Report categories section
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _CategoriesSection extends StatelessWidget {
   final ReportsViewModel vm;
@@ -385,21 +289,12 @@ class _ReportCategoryTile extends StatelessWidget {
     return Column(
       children: [
         InkWell(
-          onTap: () {
-            Navigator.pushNamed(context, category.route);
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Opening ${category.title}…'),
-              backgroundColor: AppColors.secondaryLight,
-              behavior: SnackBarBehavior.floating,
-              duration: const Duration(seconds: 1),
-            ));
-          },
+          onTap: () => Navigator.pushNamed(context, category.route),
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
             child: Row(
               children: [
-                // Icon
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
@@ -410,8 +305,6 @@ class _ReportCategoryTile extends StatelessWidget {
                       size: 20, color: AppColors.secondaryLight),
                 ),
                 const SizedBox(width: 14),
-
-                // Text
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -428,8 +321,6 @@ class _ReportCategoryTile extends StatelessWidget {
                     ],
                   ),
                 ),
-
-                // Arrow
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
@@ -461,10 +352,6 @@ class _ReportCategoryTile extends StatelessWidget {
     }
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Generate Custom Report section
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _CustomReportSection extends StatelessWidget {
   final ReportsViewModel vm;
@@ -559,12 +446,12 @@ class _CustomReportSection extends StatelessWidget {
             ),
             items: ReportCategory.values
                 .map((c) => DropdownMenuItem(
-                      value: c,
-                      child: Text(c.title,
-                          style: AppTextStyles.bodySmall
-                              .copyWith(fontWeight: FontWeight.w600),
-                          overflow: TextOverflow.ellipsis),
-                    ))
+              value: c,
+              child: Text(c.title,
+                  style: AppTextStyles.bodySmall
+                      .copyWith(fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis),
+            ))
                 .toList(),
             onChanged: (v) {
               if (v != null) vm.setCustomCategory(v);
@@ -572,11 +459,40 @@ class _CustomReportSection extends StatelessWidget {
           ),
           const SizedBox(height: 16),
 
+          // ── Error (fetch/export failed) ─────────────────────────────
+          if (vm.customError != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error_outline_rounded,
+                      size: 15, color: Colors.red.shade500),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      vm.customError!,
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.red.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
           // ── Generate button ─────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             child: CustomButton(
-              text: 'Generate Custom Report',
+              text: 'Generate & Download Excel',
               isLoading: vm.isGeneratingCustom,
               backgroundColor: vm.canGenerateCustom
                   ? AppColors.secondaryLight
@@ -587,17 +503,19 @@ class _CustomReportSection extends StatelessWidget {
               onPressed: vm.isGeneratingCustom || !vm.canGenerateCustom
                   ? () {}
                   : () async {
-                      await vm.generateCustomReport();
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                              '${vm.customCategory.title} report generated!'),
-                          backgroundColor: Colors.green.shade600,
-                          behavior: SnackBarBehavior.floating,
-                        ),
-                      );
-                    },
+                await vm.generateCustomReport(context: context);
+                if (!context.mounted) return;
+                if (vm.customError == null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                          '${vm.customCategory.title} report downloaded!'),
+                      backgroundColor: Colors.green.shade600,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              },
             ),
           ),
         ],
@@ -605,10 +523,6 @@ class _CustomReportSection extends StatelessWidget {
     );
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Reusable sub-widgets
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _SectionCard extends StatelessWidget {
   final String title;
@@ -722,7 +636,7 @@ class _DatePickerTile extends StatelessWidget {
                           ? AppColors.onBackgroundLight
                           : Colors.grey.shade400,
                       fontWeight:
-                          hasDate ? FontWeight.w700 : FontWeight.normal,
+                      hasDate ? FontWeight.w700 : FontWeight.normal,
                       fontSize: 12,
                     ),
                     overflow: TextOverflow.ellipsis,
@@ -744,10 +658,6 @@ class _DatePickerTile extends StatelessWidget {
     return '${d.day} ${m[d.month - 1]} ${d.year}';
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 String _fmt(double v) {
   final parts = v.toStringAsFixed(0).split('');

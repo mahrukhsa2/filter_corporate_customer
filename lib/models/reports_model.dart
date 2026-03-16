@@ -38,6 +38,19 @@ extension ReportCategoryInfo on ReportCategory {
     }
   }
 
+  /// Exact string the /corporate/reports/custom API expects for the `type` param.
+  String get apiType {
+    switch (this) {
+      case ReportCategory.monthlyBilling:     return 'Monthly billing Summary';
+      case ReportCategory.bookingHistory:     return 'Booking and service history';
+      case ReportCategory.quotationHistory:   return 'Quotation History';
+      case ReportCategory.walletTransactions: return 'Wallet Transaction History';
+      case ReportCategory.savingsDiscount:    return 'Savings and discount report';
+      case ReportCategory.vehicleUsage:       return 'Vehicle-wise usage Report';
+      case ReportCategory.paymentHistory:     return 'Payment history';
+    }
+  }
+
   String get iconAsset {
     switch (this) {
       case ReportCategory.monthlyBilling:     return 'receipt_long';
@@ -66,7 +79,7 @@ extension ReportCategoryInfo on ReportCategory {
 class ReportsSummary {
   final double totalSpentThisYear;
   final double thisMonthAmount;
-  final int thisMonthInvoices;
+  final int    thisMonthInvoices;
   final double totalSavings;
   final double savingsPercent;
   final double walletUsed;
@@ -75,12 +88,24 @@ class ReportsSummary {
   const ReportsSummary({
     required this.totalSpentThisYear,
     required this.thisMonthAmount,
-    required this.thisMonthInvoices,
+    this.thisMonthInvoices  = 0,
     required this.totalSavings,
-    required this.savingsPercent,
+    this.savingsPercent     = 0,
     required this.walletUsed,
-    required this.walletUsedPercent,
+    this.walletUsedPercent  = 0,
   });
+
+  factory ReportsSummary.fromMap(Map<String, dynamic> map) {
+    return ReportsSummary(
+      totalSpentThisYear: (map["totalSpentThisYear"] as num?)?.toDouble() ?? 0.0,
+      thisMonthAmount:    (map["thisMonthAmount"]    as num?)?.toDouble() ?? 0.0,
+      thisMonthInvoices:  (map["thisMonthInvoices"]  as num?)?.toInt()    ?? 0,
+      totalSavings:       (map["totalSavings"]       as num?)?.toDouble() ?? 0.0,
+      savingsPercent:     (map["savingsPercent"]     as num?)?.toDouble() ?? 0.0,
+      walletUsed:         (map["walletUsed"]         as num?)?.toDouble() ?? 0.0,
+      walletUsedPercent:  (map["walletUsedPercent"]  as num?)?.toDouble() ?? 0.0,
+    );
+  }
 }
 
 class CustomReportRequest {

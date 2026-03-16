@@ -1,165 +1,172 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+
+import '../../../data/network/api_constants.dart';
+import '../../../data/network/base_api_service.dart';
 import '../../../models/payment_history_report_model.dart';
+import '../../../services/excel_export_service.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// payment_history_report_view_model.dart
+//
+// API: GET /corporate/reports/payments
+// Params: startDate, endDate, method, status
+// Response: { success, summary: { totalPaid, byWallet, byCard, byTransfer }, history: [] }
+// ─────────────────────────────────────────────────────────────────────────────
 
 enum PHLoadStatus { idle, loading, loaded }
 
 class PaymentHistoryReportViewModel extends ChangeNotifier {
-  PHLoadStatus _status = PHLoadStatus.idle;
-  bool _isExporting    = false;
 
-  List<PaymentHistoryItem> _all      = [];
-  List<PaymentHistoryItem> _filtered = [];
+  PHLoadStatus _status        = PHLoadStatus.idle;
+  bool         _isTableLoading = false;
+  bool         _isExporting    = false;
+  String?      _exportError;
+
+  List<PaymentHistoryItem> _items   = [];
   PaymentHistorySummary?   _summary;
-  PaymentHistoryFilters    _filters  = const PaymentHistoryFilters();
+  PaymentHistoryFilters    _filters = const PaymentHistoryFilters();
 
-  bool get isLoading   => _status == PHLoadStatus.loading;
-  bool get isExporting => _isExporting;
-  List<PaymentHistoryItem> get items   => _filtered;
+  bool get isLoading      => _status == PHLoadStatus.loading;
+  bool get isTableLoading => _isTableLoading;
+  bool get isExporting    => _isExporting;
+  String? get exportError  => _exportError;
+
+  List<PaymentHistoryItem> get items   => _items;
   PaymentHistorySummary?   get summary => _summary;
   PaymentHistoryFilters    get filters => _filters;
 
-  PaymentHistoryReportViewModel() { _load(); }
+  PaymentHistoryReportViewModel() {
+    debugPrint('[PaymentHistoryReportViewModel] created');
+    _load();
+  }
+
+  // ── Initial full-screen load ──────────────────────────────────────────────
 
   Future<void> _load() async {
+    debugPrint('[PaymentHistoryReportViewModel] _load START');
     _status = PHLoadStatus.loading;
     notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    _all = [
-      PaymentHistoryItem(
-        id: 'p01', date: DateTime(2026, 2, 12), amount: 285,
-        method: PaymentMethod.wallet,
-        invoiceRef: 'INV-7845', status: PaymentStatus.paid,
-        reference: 'WAL-98765', actionType: PaymentActionType.viewReceipt,
-      ),
-      PaymentHistoryItem(
-        id: 'p02', date: DateTime(2026, 2, 10), amount: 10000,
-        method: PaymentMethod.creditCard,
-        invoiceRef: 'Top-up', status: PaymentStatus.success,
-        reference: 'TXN-45678', actionType: PaymentActionType.viewReceipt,
-      ),
-      PaymentHistoryItem(
-        id: 'p03', date: DateTime(2026, 2, 5), amount: 2450,
-        method: PaymentMethod.bankTransfer,
-        invoiceRef: 'INV-7844', status: PaymentStatus.paid,
-        reference: 'REF-12345', actionType: PaymentActionType.viewProof,
-      ),
-      PaymentHistoryItem(
-        id: 'p04', date: DateTime(2026, 1, 28), amount: 740,
-        method: PaymentMethod.wallet,
-        invoiceRef: 'INV-7831', status: PaymentStatus.paid,
-        reference: 'WAL-97200', actionType: PaymentActionType.viewReceipt,
-      ),
-      PaymentHistoryItem(
-        id: 'p05', date: DateTime(2026, 1, 20), amount: 15000,
-        method: PaymentMethod.bankTransfer,
-        invoiceRef: 'Top-up', status: PaymentStatus.success,
-        reference: 'REF-11900', actionType: PaymentActionType.viewProof,
-      ),
-      PaymentHistoryItem(
-        id: 'p06', date: DateTime(2026, 1, 15), amount: 435,
-        method: PaymentMethod.creditCard,
-        invoiceRef: 'INV-7820', status: PaymentStatus.paid,
-        reference: 'TXN-44100', actionType: PaymentActionType.viewReceipt,
-      ),
-      PaymentHistoryItem(
-        id: 'p07', date: DateTime(2026, 1, 10), amount: 180,
-        method: PaymentMethod.cash,
-        invoiceRef: 'INV-7812', status: PaymentStatus.paid,
-        reference: 'CSH-00481', actionType: PaymentActionType.viewInvoice,
-      ),
-      PaymentHistoryItem(
-        id: 'p08', date: DateTime(2026, 1, 5), amount: 20000,
-        method: PaymentMethod.creditCard,
-        invoiceRef: 'Top-up', status: PaymentStatus.success,
-        reference: 'TXN-43500', actionType: PaymentActionType.viewReceipt,
-      ),
-      PaymentHistoryItem(
-        id: 'p09', date: DateTime(2025, 12, 28), amount: 650,
-        method: PaymentMethod.wallet,
-        invoiceRef: 'INV-7798', status: PaymentStatus.paid,
-        reference: 'WAL-96400', actionType: PaymentActionType.viewReceipt,
-      ),
-      PaymentHistoryItem(
-        id: 'p10', date: DateTime(2025, 12, 20), amount: 920,
-        method: PaymentMethod.bankTransfer,
-        invoiceRef: 'INV-7785', status: PaymentStatus.paid,
-        reference: 'REF-11200', actionType: PaymentActionType.viewProof,
-      ),
-      PaymentHistoryItem(
-        id: 'p11', date: DateTime(2025, 12, 15), amount: 340,
-        method: PaymentMethod.wallet,
-        invoiceRef: 'INV-7770', status: PaymentStatus.pending,
-        reference: 'WAL-95800', actionType: PaymentActionType.viewInvoice,
-      ),
-      PaymentHistoryItem(
-        id: 'p12', date: DateTime(2025, 12, 8), amount: 448,
-        method: PaymentMethod.creditCard,
-        invoiceRef: 'INV-7761', status: PaymentStatus.failed,
-        reference: 'TXN-42100', actionType: PaymentActionType.viewReceipt,
-      ),
-    ];
-
-    _filtered = List.from(_all);
-    _summary  = _buildSummary(_all);
-    _status   = PHLoadStatus.loaded;
+    await _fetch(_filters);
+    _status = PHLoadStatus.loaded;
     notifyListeners();
+    debugPrint('[PaymentHistoryReportViewModel] _load END items=${_items.length}');
   }
 
   Future<void> refresh() => _load();
 
+  // ── Filter change — table-only spinner, summary stays visible ─────────────
+
   void updateFilters(PaymentHistoryFilters f) {
     _filters = f;
-    _applyFilters();
     notifyListeners();
+    _fetchForFilter();
   }
 
   void clearFilters() {
-    _filters  = const PaymentHistoryFilters();
-    _filtered = List.from(_all);
+    _filters = const PaymentHistoryFilters();
+    notifyListeners();
+    _fetchForFilter();
+  }
+
+  Future<void> _fetchForFilter() async {
+    _isTableLoading = true;
+    notifyListeners();
+    await _fetch(_filters);
+    _isTableLoading = false;
     notifyListeners();
   }
 
-  void _applyFilters() {
-    _filtered = _all.where((p) {
-      if (_filters.fromDate != null &&
-          p.date.isBefore(_filters.fromDate!)) return false;
-      if (_filters.toDate != null &&
-          p.date.isAfter(
-              _filters.toDate!.add(const Duration(days: 1)))) return false;
-      if (_filters.method != null && p.method != _filters.method)
-        return false;
-      if (_filters.status != null && p.status != _filters.status)
-        return false;
-      return true;
-    }).toList();
+  // ── Core API fetch ────────────────────────────────────────────────────────
+
+  Future<void> _fetch(PaymentHistoryFilters f) async {
+    final params = f.toQueryParams();
+    debugPrint('[PaymentHistoryReportViewModel] _fetch → '
+        'GET ${ApiConstants.reportsPayments} params=$params');
+
+    final response = await BaseApiService.get(
+      ApiConstants.reportsPayments,
+      queryParams: params,
+    );
+
+    debugPrint('[PaymentHistoryReportViewModel] _fetch ← '
+        'statusCode=${response.statusCode} success=${response.success}');
+
+    if (!response.success || response.data == null) {
+      debugPrint('[PaymentHistoryReportViewModel] _fetch FAILED: ${response.message}');
+      _items   = [];
+      _summary = null;
+      return;
+    }
+
+    try {
+      final raw        = response.data!;
+      final rawHistory = raw['history'] as List? ?? [];
+      final rawSummary = raw['summary'] as Map<String, dynamic>? ?? {};
+
+      _items = rawHistory
+          .whereType<Map<String, dynamic>>()
+          .map((m) => PaymentHistoryItem.fromMap(m))
+          .toList();
+
+      _summary = PaymentHistorySummary.fromApiMap(rawSummary, _items);
+
+      debugPrint('[PaymentHistoryReportViewModel] _fetch SUCCESS '
+          'items=${_items.length} totalPaid=${_summary!.totalPaid}');
+    } catch (e, stack) {
+      debugPrint('[PaymentHistoryReportViewModel] _fetch PARSE ERROR: $e\n$stack');
+      _items   = [];
+      _summary = null;
+    }
   }
 
-  PaymentHistorySummary _buildSummary(List<PaymentHistoryItem> list) {
-    double total    = 0, wallet = 0, card = 0, transfer = 0, cash = 0;
-    for (final p in list) {
-      total += p.amount;
-      switch (p.method) {
-        case PaymentMethod.wallet:       wallet   += p.amount; break;
-        case PaymentMethod.creditCard:   card     += p.amount; break;
-        case PaymentMethod.bankTransfer: transfer += p.amount; break;
-        case PaymentMethod.cash:         cash     += p.amount; break;
-      }
-    }
-    return PaymentHistorySummary(
-      totalPaid:         total,
-      byWallet:          wallet,
-      byCard:            card,
-      byTransfer:        transfer,
-      byCash:            cash,
-      totalTransactions: list.length,
-    );
-  }
+  // ── Export ────────────────────────────────────────────────────────────────
 
   Future<void> exportReport() async {
+    if (_items.isEmpty) {
+      _exportError = 'No data available to export.';
+      notifyListeners();
+      return;
+    }
     _isExporting = true;
     notifyListeners();
-    await Future.delayed(const Duration(milliseconds: 1200));
+
+    try {
+      final rows = _items.map((item) => {
+        'Date':           item.date.toIso8601String(),
+        'Amount (SAR)':   item.amount,
+        'Method':         item.method.label,
+        'Invoice Ref':    item.invoiceRef,
+        'Status':         item.status.label,
+        'Reference':      item.reference,
+      }).toList();
+
+      final summary = _summary == null ? null : {
+        'Total Paid':   _summary!.totalPaid,
+        'By Wallet':    _summary!.byWallet,
+        'By Card':      _summary!.byCard,
+        'By Transfer':  _summary!.byTransfer,
+        'By Cash':      _summary!.byCash,
+        'Transactions': _summary!.totalTransactions,
+      };
+
+      _exportError = null;
+      await ExcelExportService.exportFromList(
+        title:    'Payment History',
+        rows:     rows,
+        fromDate: _filters.fromDate ?? DateTime.now().subtract(const Duration(days: 30)),
+        toDate:   _filters.toDate   ?? DateTime.now(),
+        summary:  summary,
+      );
+
+      debugPrint('[PaymentHistoryReportViewModel] export done');
+    } on ExcelExportException catch (e) {
+      _exportError = e.message;
+      debugPrint('[PaymentHistoryReportViewModel] no data: ${e.message}');
+    } catch (e) {
+      _exportError = 'Export failed. Please try again.';
+      debugPrint('[PaymentHistoryReportViewModel] export error: $e');
+    }
+
     _isExporting = false;
     notifyListeners();
   }

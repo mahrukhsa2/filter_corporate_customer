@@ -33,14 +33,16 @@ extension BillingInvoiceStatusInfo on BillingInvoiceStatus {
 }
 
 class BillingInvoice {
-  final String invoiceNumber;
-  final DateTime date;
-  final String vehiclePlate;
-  final String department;
-  final double amount;
+  final String               id;             // raw API id — used by InvoiceService
+  final String               invoiceNumber;
+  final DateTime             date;
+  final String               vehiclePlate;
+  final String               department;
+  final double               amount;
   final BillingInvoiceStatus status;
 
   const BillingInvoice({
+    required this.id,
     required this.invoiceNumber,
     required this.date,
     required this.vehiclePlate,
@@ -50,15 +52,49 @@ class BillingInvoice {
   });
 
   String get formattedAmount => 'SAR ${_fmt(amount)}';
+
+  factory BillingInvoice.fromMap(Map<String, dynamic> map) {
+    final rawStatus = (map['status'] ?? '').toString().toLowerCase();
+    BillingInvoiceStatus status;
+    switch (rawStatus) {
+      case 'paid':    status = BillingInvoiceStatus.paid;    break;
+      case 'overdue': status = BillingInvoiceStatus.overdue; break;
+      default:        status = BillingInvoiceStatus.pending;
+    }
+
+    // API returns 'date' as YYYY-MM-DD string
+    final rawDate = map['date'] ?? map['created_at'] ?? map['invoice_date'];
+    DateTime date;
+    try {
+      date = rawDate != null ? DateTime.parse(rawDate.toString()) : DateTime.now();
+    } catch (_) {
+      date = DateTime.now();
+    }
+
+    // API uses 'invoiceNo' as the identifier
+    final rawId       = (map['id'] ?? map['invoiceNo'] ?? '').toString();
+    final invoiceNo   = (map['invoiceNo'] ?? map['invoice_number'] ?? rawId).toString();
+
+    return BillingInvoice(
+      id:            rawId,
+      invoiceNumber: invoiceNo,
+      date:          date,
+      // API does not return vehicle — show dash
+      vehiclePlate:  (map['vehicle_plate'] ?? map['plateNo'] ?? '—').toString(),
+      department:    (map['department'] ?? map['service'] ?? map['description'] ?? '-').toString(),
+      amount:        _toDouble(map['amount']),
+      status:        status,
+    );
+  }
 }
 
 class MonthlyBillingOverview {
-  final String monthLabel;      // e.g. "February 2026"
-  final double totalBilled;
-  final double totalPaid;
-  final double outstanding;
+  final String   monthLabel;
+  final double   totalBilled;
+  final double   totalPaid;
+  final double   outstanding;
   final DateTime dueDate;
-  final double walletUsed;
+  final double   walletUsed;
 
   const MonthlyBillingOverview({
     required this.monthLabel,
@@ -68,11 +104,33 @@ class MonthlyBillingOverview {
     required this.dueDate,
     required this.walletUsed,
   });
+
+  factory MonthlyBillingOverview.fromApiMap(
+      Map<String, dynamic> summary, String monthLabel) {
+    DateTime dueDate;
+    try {
+      final raw = summary['dueDate']?.toString() ?? '';
+      dueDate = raw.isNotEmpty
+          ? DateTime.parse(raw)
+          : DateTime.now().add(const Duration(days: 15));
+    } catch (_) {
+      dueDate = DateTime.now().add(const Duration(days: 15));
+    }
+
+    return MonthlyBillingOverview(
+      monthLabel:  monthLabel,
+      totalBilled: _toDouble(summary['totalBilled']),
+      totalPaid:   _toDouble(summary['totalPaid']),
+      outstanding: _toDouble(summary['outstandingBalance']),
+      dueDate:     dueDate,
+      walletUsed:  _toDouble(summary['walletUsed']),
+    );
+  }
 }
 
 /// One bar in the monthly trend chart
 class BillingTrendPoint {
-  final String monthLabel;   // e.g. "Oct"
+  final String monthLabel;
   final double paid;
   final double pending;
 
@@ -86,7 +144,7 @@ class BillingTrendPoint {
 }
 
 class BillingFilters {
-  final int?                  month;   // 1-12, null = current
+  final int?                  month;
   final int?                  year;
   final BillingInvoiceStatus? status;
 
@@ -106,6 +164,24 @@ class BillingFilters {
   }
 
   bool get hasStatusFilter => status != null;
+
+  Map<String, String> toQueryParams() {
+    final now = DateTime.now();
+    final p   = <String, String>{
+      'month': (month ?? now.month).toString(),
+      'year':  (year  ?? now.year).toString(),
+    };
+    if (status != null) p['status'] = status!.label.toLowerCase();
+    return p;
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+double _toDouble(dynamic v) {
+  if (v == null) return 0.0;
+  if (v is num)  return v.toDouble();
+  return double.tryParse(v.toString()) ?? 0.0;
 }
 
 String _fmt(double v) {

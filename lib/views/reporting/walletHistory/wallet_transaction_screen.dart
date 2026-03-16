@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../models/wallet_transaction_model.dart';
+import '../../../services/invoice_service.dart';
 import '../../../utils/app_colors.dart';
 import '../../../utils/app_text_styles.dart';
 import '../../../widgets/custom_button.dart';
@@ -43,17 +44,17 @@ class _WTBody extends StatelessWidget {
           const CustomAppBar(
               title: 'Wallet Transaction History', showBackButton: true),
           Expanded(
-            child: vm.isLoading
+            child: vm.isLoading && vm.summary == null
                 ? const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primaryLight))
+                child: CircularProgressIndicator(
+                    color: AppColors.primaryLight))
                 : RefreshIndicator(
-                    color: AppColors.primaryLight,
-                    onRefresh: vm.refresh,
-                    child: isWide
-                        ? _WideLayout(vm: vm)
-                        : _NarrowLayout(vm: vm),
-                  ),
+              color: AppColors.primaryLight,
+              onRefresh: vm.refresh,
+              child: isWide
+                  ? _WideLayout(vm: vm)
+                  : _NarrowLayout(vm: vm),
+            ),
           ),
         ],
       ),
@@ -415,10 +416,10 @@ class _FiltersBarState extends State<_FiltersBar> {
     return InputDecoration(
       hintText: hint,
       hintStyle:
-          AppTextStyles.bodySmall.copyWith(color: Colors.grey.shade400),
+      AppTextStyles.bodySmall.copyWith(color: Colors.grey.shade400),
       isDense: true,
       contentPadding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
@@ -427,7 +428,7 @@ class _FiltersBarState extends State<_FiltersBar> {
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide:
-            const BorderSide(color: AppColors.primaryLight, width: 1.5),
+        const BorderSide(color: AppColors.primaryLight, width: 1.5),
       ),
     );
   }
@@ -447,12 +448,12 @@ const double _rowHPad        =  16.0;
 
 double get _totalTableWidth =>
     _rowHPad * 2 +
-    _colDate +
-    _colDesc +
-    _colAmount +
-    _colType +
-    _colBalance +
-    _colAction;
+        _colDate +
+        _colDesc +
+        _colAmount +
+        _colType +
+        _colBalance +
+        _colAction;
 
 class _TableCard extends StatelessWidget {
   final WalletTransactionViewModel vm;
@@ -483,8 +484,23 @@ class _TableCard extends StatelessWidget {
                 // Header
                 _TableHeader(),
 
+                // Table-only loader — shown while filters are being applied
+                if (vm.isTableLoading)
+                  SizedBox(
+                    width: _totalTableWidth,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.primaryLight,
+                          strokeWidth: 2.5,
+                        ),
+                      ),
+                    ),
+                  )
+
                 // Empty state
-                if (vm.items.isEmpty)
+                else if (vm.items.isEmpty)
                   SizedBox(
                     width: _totalTableWidth,
                     child: Padding(
@@ -500,17 +516,18 @@ class _TableCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                  ),
+                  )
 
                 // Rows
-                ...List.generate(
-                  vm.items.length,
-                  (i) => _TableRow(
-                    item:   vm.items[i],
-                    isEven: i % 2 == 0,
-                    isLast: i == vm.items.length - 1,
+                else
+                  ...List.generate(
+                    vm.items.length,
+                        (i) => _TableRow(
+                      item:   vm.items[i],
+                      isEven: i % 2 == 0,
+                      isLast: i == vm.items.length - 1,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -573,11 +590,30 @@ class _TableRow extends StatelessWidget {
     required this.isLast,
   });
 
+  /// Debit → View Invoice (InvoiceService using referenceNumber)
+  /// Credit / TopUp → View Receipt (local detail sheet)
+  void _handleAction(BuildContext context) {
+    if (item.type == WalletTransactionType.debit) {
+      // Use referenceNumber if available, fall back to id
+      final invoiceId = (item.referenceNumber != null &&
+          item.referenceNumber!.isNotEmpty)
+          ? item.referenceNumber!
+          : item.id;
+      InvoiceService.showInvoiceDetails(
+        context:   context,
+        invoiceId: invoiceId,
+      );
+    } else {
+      // Credit or TopUp → show receipt sheet
+      _showDetail(context);
+    }
+  }
+
   void _showDetail(BuildContext context) {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      isScrollControlled: true,
+    //  backgroundColor: Colors.transparent,
       builder: (_) => _DetailSheet(item: item),
     );
   }
@@ -596,7 +632,7 @@ class _TableRow extends StatelessWidget {
         border: isLast
             ? null
             : Border(
-                bottom: BorderSide(color: Colors.grey.shade100)),
+            bottom: BorderSide(color: Colors.grey.shade100)),
       ),
       child: Row(
         children: [
@@ -664,27 +700,46 @@ class _TableRow extends StatelessWidget {
                     color: AppColors.onBackgroundLight)),
           ),
 
-          // Action
+          // Action — Receipt for credit/topUp, Invoice for debit
           SizedBox(
             width: _colAction,
             child: GestureDetector(
-              onTap: () => _showDetail(context),
+              onTap: () => _handleAction(context),
               child: Container(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: AppColors.primaryLight.withOpacity(0.15),
+                  color: item.type == WalletTransactionType.debit
+                      ? AppColors.primaryLight.withOpacity(0.15)
+                      : Colors.green.shade50,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  item.type == WalletTransactionType.topUp
-                      ? 'View Receipt'
-                      : 'View Invoice',
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.secondaryLight,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 11),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      item.type == WalletTransactionType.debit
+                          ? Icons.receipt_long_outlined
+                          : Icons.receipt_outlined,
+                      size: 11,
+                      color: item.type == WalletTransactionType.debit
+                          ? AppColors.secondaryLight
+                          : Colors.green.shade700,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      item.type == WalletTransactionType.debit
+                          ? 'Invoice'
+                          : 'Receipt',
+                      style: AppTextStyles.bodySmall.copyWith(
+                          color: item.type == WalletTransactionType.debit
+                              ? AppColors.secondaryLight
+                              : Colors.green.shade700,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -773,6 +828,28 @@ class _DetailSheet extends StatelessWidget {
             _DetailRow('Reference',   item.referenceNumber!),
           const SizedBox(height: 20),
 
+          // Download invoice button — shown for debit transactions with reference
+          if (isDebit &&
+              item.referenceNumber != null &&
+              item.referenceNumber!.isNotEmpty) ...[
+            OutlinedButton.icon(
+              onPressed: () => InvoiceService.downloadInvoiceWithUI(
+                context: context,
+                invoiceId: item.referenceNumber!,
+              ),
+              icon: const Icon(Icons.download_outlined, size: 16),
+              label: const Text('Download Invoice'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.secondaryLight,
+                side: BorderSide(
+                    color: AppColors.primaryLight.withOpacity(0.5)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                minimumSize: const Size(double.infinity, 44),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
           SizedBox(
             width: double.infinity,
             child: CustomButton(
@@ -885,19 +962,19 @@ class _SummarySection extends StatelessWidget {
         // Net movement — full-width card
         Center(
           child:
-        SizedBox(
-          width: 200,
-          child: _StatCard(
-            label: 'Net Wallet Movement',
-            value:
-            '${netPositive ? '+' : '-'}SAR ${_fmt(summary.netMovement.abs())}',
-            icon: netPositive
-                ? Icons.trending_up_rounded
-                : Icons.trending_down_rounded,
-            color: AppColors.secondaryDark,
-            bgColor: AppColors.primaryLight.withOpacity(0.08),
+          SizedBox(
+            width: 200,
+            child: _StatCard(
+              label: 'Net Wallet Movement',
+              value:
+              '${netPositive ? '+' : '-'}SAR ${_fmt(summary.netMovement.abs())}',
+              icon: netPositive
+                  ? Icons.trending_up_rounded
+                  : Icons.trending_down_rounded,
+              color: AppColors.secondaryDark,
+              bgColor: AppColors.primaryLight.withOpacity(0.08),
+            ),
           ),
-        ),
         ),
         const SizedBox(height: 12),
 
@@ -961,7 +1038,7 @@ class _StatCard extends StatelessWidget {
                 Text(label,
                     style: AppTextStyles.bodySmall
                         .copyWith(color: Colors.grey.shade500,
-                            fontSize: 11)),
+                        fontSize: 11)),
               ],
             ),
           ),
@@ -993,15 +1070,22 @@ class _ExportButtons extends StatelessWidget {
             onPressed: vm.isExporting
                 ? () {}
                 : () async {
-                    await vm.exportReport('PDF');
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Exported as PDF'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  },
+              await vm.exportReport('PDF');
+              if (!context.mounted) return;
+              if (vm.exportError != null) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(vm.exportError!),
+                  backgroundColor: Colors.red.shade600,
+                  behavior: SnackBarBehavior.floating,
+                ));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Exported as PDF successfully'),
+                  backgroundColor: AppColors.secondaryLight,
+                  behavior: SnackBarBehavior.floating,
+                ));
+              }
+            },
           ),
         ),
         const SizedBox(width: 12),
@@ -1014,15 +1098,22 @@ class _ExportButtons extends StatelessWidget {
             onPressed: vm.isExporting
                 ? () {}
                 : () async {
-                    await vm.exportReport('Excel');
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Exported as Excel'),
-                        behavior: SnackBarBehavior.floating,
-                      ),
-                    );
-                  },
+              await vm.exportReport('Excel');
+              if (!context.mounted) return;
+              if (vm.exportError != null) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(vm.exportError!),
+                  backgroundColor: Colors.red.shade600,
+                  behavior: SnackBarBehavior.floating,
+                ));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('Exported as Excel successfully'),
+                  backgroundColor: AppColors.secondaryLight,
+                  behavior: SnackBarBehavior.floating,
+                ));
+              }
+            },
           ),
         ),
       ],
@@ -1052,7 +1143,7 @@ class _FilterChip extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         decoration: BoxDecoration(
           color: active
               ? AppColors.primaryLight.withOpacity(0.12)
@@ -1079,7 +1170,7 @@ class _FilterChip extends StatelessWidget {
                           ? AppColors.onBackgroundLight
                           : Colors.grey.shade500,
                       fontWeight:
-                          active ? FontWeight.w700 : FontWeight.normal,
+                      active ? FontWeight.w700 : FontWeight.normal,
                       fontSize: 11),
                   overflow: TextOverflow.ellipsis),
             ),
@@ -1111,7 +1202,7 @@ class _TypeDropdown extends StatelessWidget {
           contentPadding: const EdgeInsets.symmetric(
               horizontal: 10, vertical: 10),
           border:
-              OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
             borderSide: BorderSide(color: Colors.grey.shade300),
@@ -1129,11 +1220,11 @@ class _TypeDropdown extends StatelessWidget {
                 style: AppTextStyles.bodySmall.copyWith(fontSize: 11)),
           ),
           ...WalletTransactionType.values.map((t) => DropdownMenuItem(
-                value: t,
-                child: Text(t.label,
-                    style:
-                        AppTextStyles.bodySmall.copyWith(fontSize: 11)),
-              )),
+            value: t,
+            child: Text(t.label,
+                style:
+                AppTextStyles.bodySmall.copyWith(fontSize: 11)),
+          )),
         ],
         onChanged: onChanged,
       ),

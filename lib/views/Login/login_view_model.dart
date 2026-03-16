@@ -48,10 +48,10 @@ class LoginViewModel extends ChangeNotifier {
   }
 
   Future<bool> login(
-    BuildContext context, {
-    required String email,
-    required String password,
-  }) async {
+      BuildContext context, {
+        required String email,
+        required String password,
+      }) async {
     _status = LoginStatus.loading;
     notifyListeners();
 
@@ -67,11 +67,15 @@ class LoginViewModel extends ChangeNotifier {
       await SessionService.saveToken(model.token!);
       await SessionService.saveUser(model.user!);
       await SessionService.setRememberMe(_rememberMe);
+      await SessionService.setLoggedIn(true);
 
-      // ── Warm the cache right after login ──────────────────────────────
-      // Runs in background — does NOT block navigation to home screen.
-      // By the time the user opens BookingScreen the data will be ready.
-      AppCache.init();
+      // ── ✅ Refresh cache for logged-in user ───────────────────────────
+      // User just logged in, so we need to switch from public data
+      // (branches + referrals) to user-specific data (profile with allowed branches).
+      // This ensures BookingScreen shows the correct allowed branches.
+      debugPrint('[LoginViewModel] User logged in, calling AppCache.onLogin()');
+      await AppCache.onLogin();
+      debugPrint('[LoginViewModel] AppCache.onLogin() complete');
 
       _status = LoginStatus.success;
       notifyListeners();
@@ -87,7 +91,7 @@ class LoginViewModel extends ChangeNotifier {
         errorType: result.errorType,
         message:   result.message,
         onRetry: result.errorType == ApiErrorType.noInternet ||
-                result.errorType == ApiErrorType.timeout
+            result.errorType == ApiErrorType.timeout
             ? () => login(context, email: email, password: password)
             : null,
       );

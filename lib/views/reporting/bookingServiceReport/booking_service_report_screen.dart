@@ -7,7 +7,8 @@ import '../../../utils/app_text_styles.dart';
 import '../../../widgets/custom_app_bar.dart';
 import '../../../widgets/custom_button.dart';
 import 'booking_service_report_view_model.dart';
-import 'package:flutter/material.dart';
+import '../../../models/branch_model.dart';
+import '../../../services/invoice_service.dart';
 
 class BookingServiceReportScreen extends StatelessWidget {
   const BookingServiceReportScreen({super.key});
@@ -40,7 +41,7 @@ class _BSBody extends StatelessWidget {
           const CustomAppBar(
               title: 'Booking & Service History', showBackButton: true),
           Expanded(
-            child: vm.isLoading
+            child: vm.isLoading && vm.summary == null
                 ? const Center(
                 child: CircularProgressIndicator(
                     color: AppColors.primaryLight))
@@ -235,11 +236,14 @@ class _FiltersBarState extends State<_FiltersBar> {
               const SizedBox(width: 10),
               Expanded(
                 child: _BranchDropdown(
-                  value: f.branch,
-                  branches: vm.branches,
-                  onChanged: (b) => vm.updateFilters(b == null
+                  selectedId: f.branchId,
+                  branches: vm.branchModels,
+                  onChanged: (branch) => vm.updateFilters(branch == null
                       ? f.copyWith(clearBranch: true)
-                      : f.copyWith(branch: b)),
+                      : f.copyWith(
+                    branchId:   branch.id.toString(),
+                    branchName: branch.name,
+                  )),
                 ),
               ),
             ],
@@ -303,8 +307,23 @@ class _BookingList extends StatelessWidget {
                 // ── Dark header (gets rounded corners from ClipRRect) ────
                 _TableHeader(itemCount: items.length),
 
+                // ── Table-only loader shown while filter is being applied ──
+                if (vm.isTableLoading)
+                  SizedBox(
+                    width: _totalTableWidth,
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.primaryLight,
+                          strokeWidth: 2.5,
+                        ),
+                      ),
+                    ),
+                  )
+
                 // ── Empty state ──────────────────────────────────────────
-                if (items.isEmpty)
+                else if (items.isEmpty)
                   SizedBox(
                     width: _totalTableWidth,
                     child: Padding(
@@ -320,17 +339,18 @@ class _BookingList extends StatelessWidget {
                         ],
                       ),
                     ),
-                  ),
+                  )
 
                 // ── Data rows ────────────────────────────────────────────
-                ...List.generate(
-                  items.length,
-                      (i) => _BookingRow(
-                    item:   items[i],
-                    isEven: i % 2 == 0,
-                    isLast: i == items.length - 1,
+                else
+                  ...List.generate(
+                    items.length,
+                        (i) => _BookingRow(
+                      item:   items[i],
+                      isEven: i % 2 == 0,
+                      isLast: i == items.length - 1,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -411,11 +431,16 @@ class _BookingRow extends StatelessWidget {
     required this.isLast,
   });
 
-  void _showDetail(BuildContext context) {
+
+
+  void _showDetail(BuildContext context, BookingServiceItem item) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => _BookingDetailSheet(item: item),
     );
   }
@@ -520,125 +545,52 @@ class _BookingRow extends StatelessWidget {
             ),
           ),
 
-          // Action — View Invoice button
+          // Action — behaviour differs per status:
+          //   completed   → View Invoice + Download (via InvoiceService, uses invoiceNo)
+          //   inProgress  → Track (show tracking/detail sheet)
+          //   others      → View (show detail sheet)
           SizedBox(
             width: _colAction,
-            child: GestureDetector(
-              onTap: () => _showDetail(context),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  'View Invoice',
-                  textAlign: TextAlign.center,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.secondaryLight,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Bottom sheet detail view
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _BookingDetailSheet extends StatelessWidget {
-  final BookingServiceItem item;
-  const _BookingDetailSheet({required this.item});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = item.status;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle bar
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Header
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: s.bgColor,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(item.serviceType.icon, size: 22, color: s.color),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(item.bookingId,
-                        style: AppTextStyles.h3.copyWith(fontSize: 18)),
-                    const SizedBox(height: 2),
-                    Text(item.serviceType.label,
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: Colors.grey.shade500)),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+            child: switch (item.status) {
+              BookingStatus.completed => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(item.formattedAmount,
-                      style: AppTextStyles.h3.copyWith(
-                          color: AppColors.secondaryLight,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 20)),
-                  const SizedBox(height: 4),
-                  _StatusChip(status: s),
+                  _InvoiceActionBtn(
+                    label: 'View Invoice',
+                    icon: Icons.receipt_long_outlined,
+                    onTap: () => InvoiceService.showInvoiceDetails(
+                      context: context,
+                      invoiceId: item.invoiceNo.toString(),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  _InvoiceActionBtn(
+                    label: 'Download',
+                    icon: Icons.download_rounded,
+                    onTap: () => InvoiceService.downloadInvoiceWithUI(
+                      context: context,
+                      invoiceId: item.invoiceNo.toString(),
+                    ),
+                    isSecondary: true,
+                  ),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Divider(height: 1, color: Colors.grey.shade100),
-          const SizedBox(height: 16),
-
-          _DetailRow('Date',       _shortDate(item.date)),
-          _DetailRow('Vehicle',    item.vehiclePlate),
-          _DetailRow('Department', item.department),
-          _DetailRow('Branch',     item.branch),
-          _DetailRow('Status',     s.label),
-          const SizedBox(height: 20),
-
-          SizedBox(
-            width: double.infinity,
-            child: CustomButton(
-              text: 'Close',
-              backgroundColor: AppColors.primaryLight,
-              textColor: AppColors.onPrimaryLight,
-              onPressed: () => Navigator.pop(context),
-            ),
+              BookingStatus.inProgress => _BSActionBtn(
+                label: 'Track',
+                icon: Icons.my_location_rounded,
+                color: Colors.blue.shade600,
+                bgColor: Colors.blue.shade50,
+                onTap: () => _showDetail(context, item),
+              ),
+              _ => _BSActionBtn(
+                label: 'View',
+                icon: Icons.visibility_outlined,
+                color: AppColors.secondaryLight,
+                bgColor: AppColors.primaryLight.withOpacity(0.12),
+                onTap: () => _showDetail(context, item),
+              ),
+            },
           ),
         ],
       ),
@@ -646,35 +598,7 @@ class _BookingDetailSheet extends StatelessWidget {
   }
 }
 
-class _DetailRow extends StatelessWidget {
-  final String label;
-  final String value;
-  const _DetailRow(this.label, this.value);
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 110,
-            child: Text(label,
-                style: AppTextStyles.bodySmall
-                    .copyWith(color: Colors.grey.shade500)),
-          ),
-          Expanded(
-            child: Text(value,
-                style: AppTextStyles.bodySmall.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.onBackgroundLight)),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Summary stats section
@@ -748,6 +672,19 @@ class _SummarySection extends StatelessWidget {
               color: BookingStatus.pending.color,
               bgColor: BookingStatus.pending.bgColor,
             )),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _StatCard(
+              label: 'Submitted',
+              value: '${summary.submitted}',
+              icon: BookingStatus.submitted.icon,
+              color: BookingStatus.submitted.color,
+              bgColor: BookingStatus.submitted.bgColor,
+            )),
+            const Spacer(),
           ],
         ),
         const SizedBox(height: 12),
@@ -838,11 +775,19 @@ class _ExportButton extends StatelessWidget {
             : () async {
           await vm.exportReport();
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Report exported successfully'),
-            backgroundColor: AppColors.secondaryLight,
-            behavior: SnackBarBehavior.floating,
-          ));
+          if (vm.exportError != null) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text(vm.exportError!),
+              backgroundColor: Colors.red.shade600,
+              behavior: SnackBarBehavior.floating,
+            ));
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: const Text('Report exported successfully'),
+              backgroundColor: AppColors.secondaryLight,
+              behavior: SnackBarBehavior.floating,
+            ));
+          }
         },
       ),
     );
@@ -934,6 +879,268 @@ class _StatCard extends StatelessWidget {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Booking detail bottom sheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BookingDetailSheet extends StatelessWidget {
+  final BookingServiceItem item;
+  const _BookingDetailSheet({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = item.status;
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // Header row
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                    color: s.bgColor,
+                    borderRadius: BorderRadius.circular(12)),
+                child: Icon(s.icon, size: 20, color: s.color),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(item.bookingId,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.secondaryLight)),
+                    Text(_shortDate(item.date),
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: Colors.grey.shade500)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                    color: s.bgColor,
+                    borderRadius: BorderRadius.circular(20)),
+                child: Text(s.label,
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: s.color,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 11)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          const Divider(height: 1, color: Color(0xFFF0F0F0)),
+          const SizedBox(height: 16),
+
+          // Details
+          _BDRow('Vehicle',    item.vehiclePlate),
+          _BDRow('Department', item.department),
+
+          if (item.branch.isNotEmpty)
+            _BDRow('Branch',   item.branch),
+          if (item.date != null)
+            _BDRow('Date', item.date.toString()),
+          if (item.amount != null)
+            _BDRow('Amount',   'SAR ${item.formattedAmount}',
+                valueColor: AppColors.secondaryLight),
+
+          // In-progress notice
+          if (item.status == BookingStatus.inProgress) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(children: [
+                Icon(Icons.my_location_rounded,
+                    size: 16, color: Colors.blue.shade700),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Your vehicle is currently being serviced. '
+                        'Please check back later for updates.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                        color: Colors.blue.shade700, fontSize: 11),
+                  ),
+                ),
+              ]),
+            ),
+          ],
+
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: CustomButton(
+              text: 'Close',
+              backgroundColor: AppColors.primaryLight,
+              textColor: AppColors.onPrimaryLight,
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BDRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? valueColor;
+  const _BDRow(this.label, this.value, {this.valueColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(label,
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: Colors.grey.shade500,
+                    fontWeight: FontWeight.w600)),
+          ),
+          Expanded(
+            child: Text(value,
+                style: AppTextStyles.bodySmall.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: valueColor ?? AppColors.onBackgroundLight)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Generic status-coloured action button (Track / View)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BSActionBtn extends StatelessWidget {
+  final String     label;
+  final IconData   icon;
+  final Color      color;
+  final Color      bgColor;
+  final VoidCallback onTap;
+  const _BSActionBtn({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.bgColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+            color: bgColor, borderRadius: BorderRadius.circular(8)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 4),
+            Text(label,
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invoice action button — used in table rows
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _InvoiceActionBtn extends StatelessWidget {
+  final String     label;
+  final IconData   icon;
+  final VoidCallback onTap;
+  final bool       isSecondary;
+
+  const _InvoiceActionBtn({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.isSecondary = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSecondary
+              ? AppColors.backgroundLight
+              : AppColors.primaryLight.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(7),
+          border: isSecondary
+              ? Border.all(color: Colors.grey.shade300)
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon,
+                size: 11,
+                color: isSecondary
+                    ? Colors.grey.shade600
+                    : AppColors.secondaryLight),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: isSecondary
+                    ? Colors.grey.shade600
+                    : AppColors.secondaryLight,
+                fontWeight: FontWeight.w700,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Dropdowns
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -964,29 +1171,37 @@ class _StatusDropdown extends StatelessWidget {
 }
 
 class _BranchDropdown extends StatelessWidget {
-  final String? value;
-  final List<String> branches;
-  final ValueChanged<String?> onChanged;
+  final String? selectedId;
+  final List<BranchModel> branches;
+  final ValueChanged<BranchModel?> onChanged;
   const _BranchDropdown({
-    required this.value,
+    required this.selectedId,
     required this.branches,
     required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    // Find current BranchModel by id to set dropdown value
+    final current = selectedId == null
+        ? null
+        : branches.cast<BranchModel?>().firstWhere(
+          (b) => b?.id.toString() == selectedId,
+      orElse: () => null,
+    );
+
     return SizedBox(
       height: 40,
-      child: DropdownButtonFormField<String?>(
-        value: value,
+      child: DropdownButtonFormField<BranchModel?>(
+        value: current,
         isExpanded: true,
         style: AppTextStyles.bodySmall
             .copyWith(color: Colors.black, fontSize: 12),
         dropdownColor: Colors.white,
         decoration: _dropdownDeco('All Branches'),
         items: [
-          _ddItem<String?>(null, 'All Branches'),
-          ...branches.map((b) => _ddItem<String?>(b, b)),
+          _ddItem<BranchModel?>(null, 'All Branches'),
+          ...branches.map((b) => _ddItem<BranchModel?>(b, b.name)),
         ],
         onChanged: onChanged,
       ),

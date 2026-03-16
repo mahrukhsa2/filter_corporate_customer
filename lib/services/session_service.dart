@@ -17,6 +17,7 @@ class SessionService {
   static const _kLocale     = 'app_locale';
   static const _kOnboard    = 'onboard_done';
   static const _kRememberMe = 'remember_me';
+  static const _kLoggedIn   = 'is_logged_in'; // ✅ NEW
 
   // ── Token ──────────────────────────────────────────────────────────────────
 
@@ -36,8 +37,23 @@ class SessionService {
   }
 
   static Future<bool> isLoggedIn() async {
+    final p = await SharedPreferences.getInstance();
+    // Check explicit flag first (more reliable)
+    if (p.containsKey(_kLoggedIn)) {
+      return p.getBool(_kLoggedIn) ?? false;
+    }
+    // Fallback to token check for backward compatibility
     final token = await getToken();
     return token != null && token.isNotEmpty;
+  }
+
+  // ── ✅ NEW: Explicit logged-in flag ───────────────────────────────────────
+  // Set this to true after successful login, false on logout.
+  // This is more reliable than just checking token existence.
+
+  static Future<void> setLoggedIn(bool value) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(_kLoggedIn, value);
   }
 
   // ── User object (new — stores full AuthUser JSON) ──────────────────────────
@@ -148,6 +164,7 @@ class SessionService {
     final p = await SharedPreferences.getInstance();
     await p.remove(_kToken);
     await p.remove(_kUser);
+    await p.remove(_kLoggedIn); // ✅ Clear logged-in flag on logout
     final remember = p.getBool(_kRememberMe) ?? false;
     if (!remember) await p.remove(_kRememberMe);
   }

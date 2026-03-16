@@ -1,6 +1,7 @@
 import 'package:filter_corporate_customer/widgets/custom_app_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../services/invoice_service.dart';
 
 import '../../../models/monthly_billing_report_model.dart';
 import '../../../utils/app_colors.dart';
@@ -45,15 +46,15 @@ class _MBBody extends StatelessWidget {
           Expanded(
             child: vm.isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primaryLight))
+                child: CircularProgressIndicator(
+                    color: AppColors.primaryLight))
                 : RefreshIndicator(
-                    color: AppColors.primaryLight,
-                    onRefresh: vm.refresh,
-                    child: isWide
-                        ? _WideLayout(vm: vm)
-                        : _NarrowLayout(vm: vm),
-                  ),
+              color: AppColors.primaryLight,
+              onRefresh: vm.refresh,
+              child: isWide
+                  ? _WideLayout(vm: vm)
+                  : _NarrowLayout(vm: vm),
+            ),
           ),
         ],
       ),
@@ -172,11 +173,11 @@ class _FiltersBar extends StatelessWidget {
                 decoration: _deco('Month'),
                 items: vm.availableMonths
                     .map((m) => DropdownMenuItem(
-                          value: m,
-                          child: Text(vm.monthName(m),
-                              style: AppTextStyles.bodySmall.copyWith(
-                                  color: Colors.black, fontSize: 12)),
-                        ))
+                  value: m,
+                  child: Text(vm.monthName(m),
+                      style: AppTextStyles.bodySmall.copyWith(
+                          color: Colors.black, fontSize: 12)),
+                ))
                     .toList(),
                 onChanged: (m) =>
                     vm.updateFilters(f.copyWith(month: m ?? f.month)),
@@ -199,11 +200,11 @@ class _FiltersBar extends StatelessWidget {
                 decoration: _deco('Year'),
                 items: vm.availableYears
                     .map((y) => DropdownMenuItem(
-                          value: y,
-                          child: Text('$y',
-                              style: AppTextStyles.bodySmall.copyWith(
-                                  color: Colors.black, fontSize: 12)),
-                        ))
+                  value: y,
+                  child: Text('$y',
+                      style: AppTextStyles.bodySmall.copyWith(
+                          color: Colors.black, fontSize: 12)),
+                ))
                     .toList(),
                 onChanged: (y) =>
                     vm.updateFilters(f.copyWith(year: y ?? f.year)),
@@ -232,11 +233,11 @@ class _FiltersBar extends StatelessWidget {
                             color: Colors.black, fontSize: 12)),
                   ),
                   ...BillingInvoiceStatus.values.map((s) => DropdownMenuItem(
-                        value: s,
-                        child: Text(s.label,
-                            style: AppTextStyles.bodySmall.copyWith(
-                                color: Colors.black, fontSize: 12)),
-                      )),
+                    value: s,
+                    child: Text(s.label,
+                        style: AppTextStyles.bodySmall.copyWith(
+                            color: Colors.black, fontSize: 12)),
+                  )),
                 ],
                 onChanged: (s) => vm.updateFilters(
                     s == null
@@ -252,23 +253,23 @@ class _FiltersBar extends StatelessWidget {
 }
 
 InputDecoration _deco(String hint) => InputDecoration(
-      hintText: hint,
-      hintStyle: AppTextStyles.bodySmall
-          .copyWith(color: Colors.grey.shade400, fontSize: 12),
-      isDense: true,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide:
-            const BorderSide(color: AppColors.primaryLight, width: 1.5),
-      ),
-    );
+  hintText: hint,
+  hintStyle: AppTextStyles.bodySmall
+      .copyWith(color: Colors.grey.shade400, fontSize: 12),
+  isDense: true,
+  contentPadding:
+  const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+  enabledBorder: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(10),
+    borderSide: BorderSide(color: Colors.grey.shade300),
+  ),
+  focusedBorder: OutlineInputBorder(
+    borderRadius: BorderRadius.circular(10),
+    borderSide:
+    const BorderSide(color: AppColors.primaryLight, width: 1.5),
+  ),
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Overview card
@@ -502,7 +503,7 @@ class _InvoiceTable extends StatelessWidget {
 
                     ...List.generate(
                       vm.items.length,
-                      (i) => _InvoiceRow(
+                          (i) => _InvoiceRow(
                         invoice: vm.items[i],
                         isEven:  i % 2 == 0,
                         isLast:  i == vm.items.length - 1,
@@ -526,13 +527,13 @@ class _TH extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: width,
-        child: Text(label,
-            style: AppTextStyles.bodySmall.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                fontSize: 12)),
-      );
+    width: width,
+    child: Text(label,
+        style: AppTextStyles.bodySmall.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w700,
+            fontSize: 12)),
+  );
 }
 
 class _InvoiceRow extends StatelessWidget {
@@ -586,7 +587,7 @@ class _InvoiceRow extends StatelessWidget {
             width: _cVeh,
             child: Container(
               padding:
-                  const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
                 color: AppColors.primaryLight.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(6),
@@ -631,22 +632,33 @@ class _InvoiceRow extends StatelessWidget {
           ),
           SizedBox(
             width: _cAct,
-            child: GestureDetector(
-              onTap: () => _handleAction(context),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: actionBg,
-                  borderRadius: BorderRadius.circular(8),
+            child: (isPending || isOverdue)
+            // ── Pending/Overdue: View + Pay Now ────────────────────────
+                ? Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _BillingInvoiceBtn(
+                  label: 'View',
+                  icon: Icons.visibility_outlined,
+                  onTap: () => _showInvoiceSheet(context),
                 ),
-                child: Text(actionLabel,
-                    textAlign: TextAlign.center,
-                    style: AppTextStyles.bodySmall.copyWith(
-                        color: actionColor,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 11)),
-              ),
+                const SizedBox(height: 5),
+                _BillingInvoiceBtn(
+                  label: 'Pay Now',
+                  icon: Icons.payment_rounded,
+                  onTap: () => _showPayDialog(context),
+                  isSecondary: true,
+                  secondaryColor: Colors.red.shade600,
+                  secondaryBg: Colors.red.shade50,
+                ),
+              ],
+            )
+            // ── Paid: View only ────────────────────────────────────────
+                : _BillingInvoiceBtn(
+              label: 'View',
+              icon: Icons.visibility_outlined,
+              onTap: () => _showInvoiceSheet(context),
             ),
           ),
         ],
@@ -708,7 +720,7 @@ class _InvoiceRow extends StatelessWidget {
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                 content:
-                    Text('Payment initiated for ${invoice.invoiceNumber}'),
+                Text('Payment initiated for ${invoice.invoiceNumber}'),
                 backgroundColor: AppColors.secondaryLight,
                 behavior: SnackBarBehavior.floating,
               ));
@@ -721,129 +733,71 @@ class _InvoiceRow extends StatelessWidget {
   }
 
   void _showInvoiceSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _InvoiceDetailSheet(invoice: invoice),
+    InvoiceService.showInvoiceDetails(
+      context:   context,
+      invoiceId: invoice.invoiceNumber, // API uses invoiceNo as the lookup key
     );
   }
 }
 
+
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Invoice detail bottom sheet
+// Invoice action button — used in table rows for paid invoices
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _InvoiceDetailSheet extends StatelessWidget {
-  final BillingInvoice invoice;
-  const _InvoiceDetailSheet({required this.invoice});
+class _BillingInvoiceBtn extends StatelessWidget {
+  final String     label;
+  final IconData   icon;
+  final VoidCallback onTap;
+  final bool       isSecondary;
+  final Color?     secondaryColor;
+  final Color?     secondaryBg;
+
+  const _BillingInvoiceBtn({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.isSecondary    = false,
+    this.secondaryColor,
+    this.secondaryBg,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final s = invoice.status;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryLight.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(Icons.receipt_long_rounded,
-                    color: AppColors.secondaryLight, size: 22),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(invoice.invoiceNumber,
-                        style: AppTextStyles.bodyMedium.copyWith(
-                            fontWeight: FontWeight.w800)),
-                    Text(_longDate(invoice.date),
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: Colors.grey.shade500)),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: s.bgColor,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(s.label,
-                    style: AppTextStyles.bodySmall.copyWith(
-                        color: s.color, fontWeight: FontWeight.w700)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Divider(color: Colors.grey.shade100, height: 1),
-          const SizedBox(height: 16),
-          _DR('Invoice #',   invoice.invoiceNumber),
-          _DR('Date',        _longDate(invoice.date)),
-          _DR('Vehicle',     invoice.vehiclePlate),
-          _DR('Department',  invoice.department),
-          _DR('Amount',      invoice.formattedAmount),
-          _DR('Status',      s.label),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: CustomButton(
-              text: 'Close',
-              backgroundColor: AppColors.primaryLight,
-              textColor: AppColors.onPrimaryLight,
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-        ],
+    final fg = isSecondary
+        ? (secondaryColor ?? Colors.grey.shade600)
+        : AppColors.secondaryLight;
+    final bg = isSecondary
+        ? (secondaryBg ?? AppColors.backgroundLight)
+        : AppColors.primaryLight.withOpacity(0.15);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(7),
+          border: isSecondary && secondaryBg == null
+              ? Border.all(color: Colors.grey.shade300)
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 11, color: fg),
+            const SizedBox(width: 4),
+            Text(label,
+                style: AppTextStyles.bodySmall.copyWith(
+                    color: fg,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 10)),
+          ],
+        ),
       ),
     );
   }
-}
-
-class _DR extends StatelessWidget {
-  final String l, v;
-  const _DR(this.l, this.v);
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 110,
-              child: Text(l,
-                  style: AppTextStyles.bodySmall
-                      .copyWith(color: Colors.grey.shade500)),
-            ),
-            Expanded(
-              child: Text(v,
-                  style: AppTextStyles.bodySmall.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.onBackgroundLight)),
-            ),
-          ],
-        ),
-      );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -924,7 +878,7 @@ class _TrendChart extends StatelessWidget {
                                   // Pending portion
                                   AnimatedContainer(
                                     duration:
-                                        const Duration(milliseconds: 600),
+                                    const Duration(milliseconds: 600),
                                     curve: Curves.easeOutCubic,
                                     width: barW,
                                     height: maxVal > 0
@@ -941,7 +895,7 @@ class _TrendChart extends StatelessWidget {
                                   // Paid portion
                                   AnimatedContainer(
                                     duration:
-                                        const Duration(milliseconds: 600),
+                                    const Duration(milliseconds: 600),
                                     curve: Curves.easeOutCubic,
                                     width: barW,
                                     height: maxVal > 0
@@ -1015,19 +969,19 @@ class _LegendDot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-              width: 10,
-              height: 10,
-              decoration:
-                  BoxDecoration(color: color, shape: BoxShape.circle)),
-          const SizedBox(width: 5),
-          Text(label,
-              style: AppTextStyles.bodySmall
-                  .copyWith(color: Colors.grey.shade600, fontSize: 11)),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+          width: 10,
+          height: 10,
+          decoration:
+          BoxDecoration(color: color, shape: BoxShape.circle)),
+      const SizedBox(width: 5),
+      Text(label,
+          style: AppTextStyles.bodySmall
+              .copyWith(color: Colors.grey.shade600, fontSize: 11)),
+    ],
+  );
 }
 
 class _ChartStat extends StatelessWidget {
@@ -1039,19 +993,19 @@ class _ChartStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label,
-                style: AppTextStyles.bodySmall.copyWith(
-                    color: Colors.grey.shade500, fontSize: 11)),
-            Text(value,
-                style: AppTextStyles.bodySmall.copyWith(
-                    color: color, fontWeight: FontWeight.w800)),
-          ],
-        ),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label,
+            style: AppTextStyles.bodySmall.copyWith(
+                color: Colors.grey.shade500, fontSize: 11)),
+        Text(value,
+            style: AppTextStyles.bodySmall.copyWith(
+                color: color, fontWeight: FontWeight.w800)),
+      ],
+    ),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1079,15 +1033,22 @@ class _ActionButtons extends StatelessWidget {
                 onPressed: vm.isExporting
                     ? () {}
                     : () async {
-                        await vm.exportReport('PDF');
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('PDF downloaded'),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      },
+                  await vm.exportReport('PDF');
+                  if (!context.mounted) return;
+                  if (vm.exportError != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(vm.exportError!),
+                      backgroundColor: Colors.red.shade600,
+                      behavior: SnackBarBehavior.floating,
+                    ));
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('PDF downloaded successfully'),
+                      backgroundColor: AppColors.secondaryLight,
+                      behavior: SnackBarBehavior.floating,
+                    ));
+                  }
+                },
               ),
             ),
             const SizedBox(width: 12),
@@ -1100,15 +1061,22 @@ class _ActionButtons extends StatelessWidget {
                 onPressed: vm.isExporting
                     ? () {}
                     : () async {
-                        await vm.exportReport('Excel');
-                        if (!context.mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Excel downloaded'),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      },
+                  await vm.exportReport('Excel');
+                  if (!context.mounted) return;
+                  if (vm.exportError != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(vm.exportError!),
+                      backgroundColor: Colors.red.shade600,
+                      behavior: SnackBarBehavior.floating,
+                    ));
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Excel downloaded successfully'),
+                      backgroundColor: AppColors.secondaryLight,
+                      behavior: SnackBarBehavior.floating,
+                    ));
+                  }
+                },
               ),
             ),
           ],
@@ -1139,7 +1107,7 @@ class _ActionButtons extends StatelessWidget {
       context: context,
       builder: (_) => AlertDialog(
         shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
           children: [
             Icon(Icons.warning_amber_rounded,
@@ -1205,22 +1173,22 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, size: 15, color: AppColors.secondaryLight),
-          ),
-          const SizedBox(width: 8),
-          Text(title,
-              style: AppTextStyles.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.onBackgroundLight)),
-        ],
-      );
+    children: [
+      Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: AppColors.primaryLight.withOpacity(0.2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, size: 15, color: AppColors.secondaryLight),
+      ),
+      const SizedBox(width: 8),
+      Text(title,
+          style: AppTextStyles.bodyMedium.copyWith(
+              fontWeight: FontWeight.w700,
+              color: AppColors.onBackgroundLight)),
+    ],
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
